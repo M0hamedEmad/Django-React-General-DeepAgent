@@ -1,0 +1,37 @@
+[
+  {
+    "kind": "tool",
+    "id": "internet_search",
+    "label": "Web search",
+    "agents": ["general"],
+    "description": "Search the public web for current external information."
+  },
+  {
+    "kind": "tool",
+    "id": "fetch_webpage_content",
+    "label": "Read webpage",
+    "agents": ["general"],
+    "description": "Read the text content of a public webpage."
+  },
+  {
+    "kind": "tool",
+    "id": "ask_user",
+    "label": "Ask user",
+    "agents": ["general"],
+    "description": "Pause and ask all currently known clarification questions."
+  },
+  {
+    "kind": "tool",
+    "id": "present_ui",
+    "label": "Inline visual",
+    "agents": ["general"],
+    "description": "Show one compact KPI group, chart, short table, or status in chat."
+  },
+  {
+    "kind": "tool",
+    "id": "present_report",
+    "label": "Workspace report",
+    "agents": ["general"],
+    "description": "Create a structured multi-section report in the workspace."
+  }
+]

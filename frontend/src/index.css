@@ -1,0 +1,140 @@
+@import "tailwindcss";
+
+@theme {
+  /* Calm, cool-neutral surfaces for the application shell. Components use
+     these roles instead of inventing a different gray for every surface. */
+  --color-app: #f7f7f5;
+  --color-canvas: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f2f2f0;
+  --color-sidebar: #f7f7f5;
+  --color-line: #e6e6e2;
+  --color-ink: #20201e;
+  --color-ink-muted: #6f6f68;
+}
+
+:root {
+  color-scheme: light;
+  background: var(--color-app);
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-app);
+  color: var(--color-ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+textarea {
+  field-sizing: content;
+}
+
+/* One restrained motion cue for active model work. */
+.thinking-shimmer {
+  color: #6b7280;
+  background: linear-gradient(90deg, #6b7280 20%, #111827 48%, #6b7280 76%);
+  background-size: 220% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: thinking-shimmer 1.8s linear infinite;
+}
+
+@keyframes thinking-shimmer {
+  from { background-position: 120% 0; }
+  to { background-position: -100% 0; }
+}
+
+/* Reusable right-side workspace for generated presentations and artifacts. */
+.workspace-panel {
+  position: relative;
+  width: var(--workspace-panel-width);
+  animation: workspace-panel-enter 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.workspace-panel[data-fullscreen="true"] {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  width: 100%;
+  border-left: 0;
+}
+
+@keyframes workspace-panel-enter {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@media (max-width: 767px) {
+  .workspace-panel {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    width: 100%;
+    border-left: 0;
+  }
+  .workspace-panel-resizer { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-panel { animation: none; }
+  .thinking-shimmer {
+    animation: none;
+    background: none;
+    color: #4b5563;
+    -webkit-text-fill-color: currentColor;
+  }
+}
+
+/* Rendered markdown in answers and generated presentations. */
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p { margin: 0.5em 0; line-height: 1.65; }
+.md h1, .md h2, .md h3 { font-weight: 600; margin: 1em 0 0.4em; line-height: 1.3; }
+.md h1 { font-size: 1.25rem; } .md h2 { font-size: 1.1rem; } .md h3 { font-size: 1rem; }
+.md ul, .md ol { margin: 0.4em 0; padding-left: 1.4em; }
+.md ul { list-style: disc; } .md ol { list-style: decimal; }
+.md li { margin: 0.2em 0; }
+.md a { color: #0969da; text-decoration: underline; }
+.md { overflow-wrap: anywhere; }
+.md code { background: var(--color-surface-muted); border-radius: 4px; padding: 0.1em 0.35em; font-size: 0.9em; }
+.md pre { background: var(--color-app); border: 1px solid var(--color-line); border-radius: 10px; padding: 0.8em 1em; overflow-x: auto; }
+.md pre code { background: none; padding: 0; }
+.md table { border-collapse: collapse; margin: 0.6em 0; font-size: 0.9em; display: block; overflow-x: auto; }
+.md th, .md td { border: 1px solid var(--color-line); padding: 0.35em 0.7em; text-align: left; }
+.md th { background: var(--color-app); font-weight: 600; }
+.md blockquote { border-left: 3px solid var(--color-line); margin: 0.6em 0; padding-left: 0.9em; color: var(--color-ink-muted); }
+.md hr { border: 0; border-top: 1px solid var(--color-line); margin: 1em 0; }
+
+/* Report content uses semantic color and editorial rhythm. The pale identity
+   header is the visual anchor; body blocks stay quiet enough for dense data. */
+.report-document {
+  color: #172033;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+.report-block-section + .report-block { margin-top: 1.1rem; }
+.report-markdown .md strong { color: #172033; font-weight: 650; }
+.report-markdown .md h2,
+.report-markdown .md h3 { color: #065f46; }
+.report-markdown .md li::marker { color: #10b981; }
+.report-markdown .md blockquote {
+  border-left-color: #34d399;
+  color: #475569;
+  background: #f0fdf4;
+  border-radius: 0 10px 10px 0;
+  padding: 0.65rem 0.9rem;
+}
+
+/* Print = the open workspace panel only. */
+@media print {
+  body * { visibility: hidden; }
+  #workspace-panel, #workspace-panel * { visibility: visible; }
+  #workspace-panel { position: fixed; inset: 0; width: 100%; border: 0; overflow: visible; }
+  .no-print { display: none !important; }
+}

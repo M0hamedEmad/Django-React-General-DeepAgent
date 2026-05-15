@@ -1,0 +1,66 @@
+[
+  {
+    "id": "report",
+    "label": "Report",
+    "icon": "file-chart-column",
+    "placement": "bar",
+    "prompt": "Use present_report to create a workspace report.",
+    "hint": "Create a structured report in the side workspace"
+  },
+  {
+    "id": "analysis",
+    "label": "Analysis",
+    "icon": "chart-column",
+    "placement": "bar",
+    "prompt": "Analyse: ",
+    "hint": "Analyse figures, trends, risks, or alternatives"
+  },
+  {
+    "id": "brief",
+    "label": "Executive brief",
+    "icon": "book-open",
+    "placement": "bar",
+    "prompt": "Prepare an executive brief about: ",
+    "hint": "Turn evidence into a concise decision brief"
+  },
+  {
+    "id": "research",
+    "label": "Research",
+    "icon": "search",
+    "placement": "bar",
+    "prompt": "Research on the web: ",
+    "hint": "Research current public information"
+  },
+  {
+    "id": "weekly-update",
+    "label": "Weekly update",
+    "icon": "file-chart-column",
+    "placement": "hero",
+    "prompt": "Turn these notes into a concise weekly leadership update: ",
+    "hint": "Summarise progress, blockers, decisions, and next actions"
+  },
+  {
+    "id": "project-plan",
+    "label": "Project plan",
+    "icon": "chart-column",
+    "placement": "hero",
+    "prompt": "Create a practical project plan for: ",
+    "hint": "Scope, milestones, dependencies, risks, and owners"
+  },
+  {
+    "id": "compare-options",
+    "label": "Compare options",
+    "icon": "boxes",
+    "placement": "hero",
+    "prompt": "Compare these options and recommend one: ",
+    "hint": "Trade-offs, risks, and a clear recommendation"
+  },
+  {
+    "id": "risk-review",
+    "label": "Risk review",
+    "icon": "triangle-alert",
+    "placement": "hero",
+    "prompt": "Review the risks in: ",
+    "hint": "Identify impact, warning signs, and mitigations"
+  }
+]

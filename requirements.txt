@@ -1,0 +1,25 @@
+Django==6.0.3
+tavily-python==0.8.0
+pydantic==2.12.5
+PyYAML==6.0.2
+
+# ASGI server. SSE requires ASGI — under WSGI the streaming response blocks a worker.
+uvicorn==0.35.0
+
+# Pinned deliberately: deep_agent_app/chat/ streams through
+# astream_events(version="v3"), which langgraph marks experimental.
+# StreamApiContractTests fails loudly if a dependency bump moves the API.
+deepagents==0.7.9
+langgraph==1.2.11
+langchain-core==1.6.0
+langchain-openai==1.6.0
+# Native Gemini support for llm.providers.*.model_provider = "google_genai".
+langchain-google-genai==4.3.7
+langchain-mcp-adapters==0.3.2
+mcp==1.28.1
+anyio==4.10.0
+httpx==0.28.1
+markdownify==1.2.3
+langgraph-checkpoint-sqlite==3.1.1  # 2.0.11 calls JsonPlusSerializer.dumps(), gone in langgraph-checkpoint 4.x: every checkpoint write failed
+aiosqlite==0.21.0
+psycopg[binary]==3.3.4

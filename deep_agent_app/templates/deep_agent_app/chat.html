@@ -1,0 +1,14 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Assistant</title>
+  <link rel="icon" href="data:,">
+  {% for name in css %}<link rel="stylesheet" href="{% static name %}">{% endfor %}
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="{% static js %}"></script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+{
+  "skill_name": "project-planning",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Create a rollout plan for a new customer-support platform. We must migrate 42 agents, retain seven years of searchable ticket history, complete security review before pilot, and go live by 30 November. The implementation owner has not been selected.",
+      "expected_output": "A working plan that preserves the fixed date and constraints, uses role-level ownership where names are missing, sequences security review before pilot, defines migration acceptance criteria, and exposes data migration and adoption risks.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "We want to start an employee mentoring program sometime next year. Make a project plan, but we have not decided the audience, scale, budget, owner, or what success means.",
+      "expected_output": "An outline rather than a false execution plan. The agent should ask all material clarification questions in one batch or proceed with explicit assumptions, use relative phases instead of invented dates, and place program-design decisions before implementation tasks.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Our office move is six weeks late. The lease ends on 31 March, network installation cannot begin until construction signs off, construction is two weeks behind, and the move coordinator says training is already done. Give me a recovery plan.",
+      "expected_output": "A recovery plan centered on the construction-to-network dependency and lease deadline, with a decision path, parallelizable work, explicit unknowns, and no claim that the project is on track merely because training is complete.",
+      "files": []
+    }
+  ]
+}

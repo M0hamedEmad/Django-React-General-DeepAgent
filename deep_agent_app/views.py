@@ -4,8 +4,10 @@ Agent turns are streamed with the AI SDK UI Message Stream protocol: each
 part is an SSE ``data: {...}`` frame and the stream ends with ``[DONE]``.
 """
 
+import asyncio
 import json
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,7 +23,11 @@ from django.views import View
 from django.views.decorators.csrf import ensure_csrf_cookie
 
 from deep_agent_app import chat
-from deep_agent_app.models import Thread
+from deep_agent_app.agent.backend import (
+    delete_conversation_workspace,
+    migrate_legacy_user_workspace,
+)
+from deep_agent_app.models import Thread, UserWorkspace
 from deep_agent_app.runtime import (
     RuntimeBusyError,
     RuntimeCapacityError,
@@ -86,12 +92,14 @@ class AiSdkEventStream:
         thread_id,
         text,
         *,
+        workspace_id=None,
         resume=None,
         options=None,
         message_id=None,
         checkpoint_config=None,
     ):
         self.thread_id = thread_id
+        self.workspace_id = workspace_id
         self.text = text
         self.resume = resume
         self.options = options
@@ -118,13 +126,18 @@ class AiSdkEventStream:
         )
 
         try:
+            turn_kwargs = {
+                "resume": self.resume,
+                "options": self.options,
+                "message_id": self.message_id,
+                "checkpoint_config": self.checkpoint_config,
+            }
+            if self.workspace_id is not None:
+                turn_kwargs["workspace_id"] = self.workspace_id
             events = chat.run_turn(
                 self.thread_id,
                 self.text,
-                resume=self.resume,
-                options=self.options,
-                message_id=self.message_id,
-                checkpoint_config=self.checkpoint_config,
+                **turn_kwargs,
             )
             async for event in events:
                 for output in self._event_frames(event):
@@ -292,6 +305,7 @@ class AiSdkEventStream:
 async def ai_sdk_frames(
     thread_id,
     text,
+    workspace_id=None,
     resume=None,
     options=None,
     message_id=None,
@@ -301,6 +315,7 @@ async def ai_sdk_frames(
     stream = AiSdkEventStream(
         thread_id,
         text,
+        workspace_id=workspace_id,
         resume=resume,
         options=options,
         message_id=message_id,
@@ -379,6 +394,16 @@ class ChatView(AuthenticatedApiView):
     ACTIONS = frozenset({"send", "edit", "regenerate"})
     PERSISTED_OPTION_KEYS = ("model", "agent", "tools", "thinking", "plan")
 
+    @staticmethod
+    async def _workspace_id(user):
+        workspace, _created = await UserWorkspace.objects.aget_or_create(user=user)
+        await asyncio.to_thread(
+            migrate_legacy_user_workspace,
+            user.pk,
+            workspace.id.hex,
+        )
+        return workspace.id.hex
+
     async def post(self, request):
         try:
             turn = self._parse_turn(request)
@@ -405,7 +430,10 @@ class ChatView(AuthenticatedApiView):
         try:
             await self._prepare_turn(turn)
             await self._save_thread(request, thread, turn)
-            return self._stream_response(turn)
+            return self._stream_response(
+                turn,
+                await self._workspace_id(request.user),
+            )
         except chat.MessageNotFound as exc:
             chat.finish_turn(turn.thread_id)
             return self.error(str(exc), status=404)
@@ -417,9 +445,11 @@ class ChatView(AuthenticatedApiView):
     def _parse_turn(cls, request):
         body = cls.json_body(request)
         thread_id = body.get("thread_id") or body.get("id")
-        if not isinstance(thread_id, str) or not thread_id or len(thread_id) > 64:
+        if not isinstance(thread_id, str) or re.fullmatch(
+            r"[A-Za-z0-9_-]{1,64}", thread_id
+        ) is None:
             raise ValueError(
-                "thread_id must be a non-empty string of at most 64 characters"
+                "thread_id must be 1-64 letters, numbers, hyphens, or underscores"
             )
 
         text = cls._user_text(body)
@@ -572,11 +602,12 @@ class ChatView(AuthenticatedApiView):
         return thread
 
     @staticmethod
-    def _stream_response(turn):
+    def _stream_response(turn, workspace_id):
         response = StreamingHttpResponse(
             ai_sdk_frames(
                 turn.thread_id,
                 turn.text,
+                workspace_id=workspace_id,
                 resume=turn.resume,
                 options=turn.options,
                 message_id=turn.message_id,
@@ -680,6 +711,12 @@ class ThreadView(OwnedThreadView):
         try:
             # History first: if it fails, the database row remains for retry.
             await chat.delete_checkpoint_history(thread_id)
+            workspace_id = await ChatView._workspace_id(request.user)
+            await asyncio.to_thread(
+                delete_conversation_workspace,
+                workspace_id,
+                thread_id,
+            )
             await thread.adelete()
         finally:
             chat.finish_turn(thread_id)

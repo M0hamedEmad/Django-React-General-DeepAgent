@@ -1,6 +1,7 @@
 ---
 name: executive-brief
 description: Turn company information, research, notes, incidents, performance updates, or analysis into a decision-ready brief for leaders. Use whenever the user asks for an executive summary, management brief, leadership update, CEO or board summary, what management needs to know, key risks and actions, or a concise synthesis for a decision. This is for interpreting and communicating evidence, not for merely retrieving a record or performing an operational transaction.
+required-tools: [ask_user, present_report]
 ---
 
 # Executive Brief
@@ -15,6 +16,7 @@ Turn scattered evidence into a brief a leader can understand, trust, and act on 
 - Prefer material changes, exceptions, dependencies, and decisions over routine detail.
 - Give actions an owner and timing only when the source or user supplies them. Otherwise write `Owner: unassigned` or `Timing: not set` instead of inventing accountability.
 - Treat recommendations as proposals. This skill does not grant permission to send, approve, publish, purchase, or change anything.
+- Do not imply that a reporting team, dashboard, auditor, target, compliance duty, or reporting cycle exists unless the user or a verified source names it. Ask for an authorized source generically when its owner or system is unknown.
 
 ## Workflow
 
@@ -68,14 +70,15 @@ Do not add a confidence label when the user only wants a neutral summary and no 
 ### 5. Choose the delivery format
 
 Use a concise chat response when the brief is short and has no useful structured display.
+When the user explicitly asks for a short brief, keep it in chat; do not expand it into a report merely because the topic is executive-facing.
 
-Use `show_report` when the user asks for a report, when the brief has several sections, or when KPIs, comparisons, trends, or a decision table materially improve understanding. In a report:
+Use `present_report` when the user asks for a report, when the brief has several sections, or when KPIs, comparisons, trends, or a decision table materially improve understanding. In a report:
 
 - use `kpis` only for sourced headline values;
 - use a `table` for exact comparisons, owners, risks, or actions;
 - use a `chart` only when a visual trend or comparison is genuinely easier to understand;
 - use `markdown` for the situation, interpretation, recommendation, and caveats;
-- use `link` for an authoritative source or an existing deliverable.
+- use `links` for authoritative sources or existing deliverables.
 
 After opening a report, summarize the decision and the most important risk in chat rather than repeating the entire report.
 

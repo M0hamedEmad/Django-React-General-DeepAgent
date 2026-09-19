@@ -8,6 +8,8 @@ from deep_agent_app.utilities.validation import AgentChoice, ReasoningEffort
 
 @dataclass(frozen=True)
 class TurnContext:
+    workspace_id: str = ""
+    thread_id: str = ""
     model: str = AUTO_MODEL
     agent: AgentChoice = "general"
     tools: tuple[str, ...] = ("web_search",)

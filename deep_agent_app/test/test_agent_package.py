@@ -335,11 +335,7 @@ class AgentPackageTests(SimpleTestCase):
             ],
         )
         self.assertNotIn("interrupt_on", create.call_args.kwargs)
-        permissions = create.call_args.kwargs["permissions"]
-        self.assertEqual(len(permissions), 1)
-        self.assertEqual(permissions[0].operations, ["write"])
-        self.assertEqual(permissions[0].paths, ["/skills", "/skills/**"])
-        self.assertEqual(permissions[0].mode, "deny")
+        self.assertNotIn("permissions", create.call_args.kwargs)
 
     def test_company_subagent_is_plain_definition_with_injected_tools(self):
         from deep_agent_app.agent import subagent
@@ -809,7 +805,11 @@ class AgentPackageTests(SimpleTestCase):
             patch.object(agent_runtime, "get_agent", AsyncMock(return_value=Agent())),
             self.assertLogs("deep_agent_app.chat", level="INFO") as logs,
         ):
-            turn = chat.run_turn("disconnect", "hello")
+            turn = chat.run_turn(
+                "disconnect",
+                "hello",
+                workspace_id="workspace-1",
+            )
             event = await asyncio.wait_for(anext(turn), 1)
             self.assertEqual(event["text"], "hello")
             await asyncio.wait_for(turn.aclose(), 1)

@@ -61,6 +61,7 @@ async def run_turn(
     thread_id: str,
     text=None,
     *,
+    workspace_id: str | None = None,
     resume=None,
     options=None,
     message_id: str | None = None,
@@ -77,9 +78,13 @@ async def run_turn(
     """
     raw_options = {} if options is None else options
     options = _turn_options(raw_options)
+    if workspace_id is None:
+        raise ValueError("workspace_id is required for an agent turn")
     command = options.get("command")
     command = command if isinstance(command, dict) else {}
     turn_context = TurnContext(
+        workspace_id=workspace_id,
+        thread_id=thread_id,
         model=options["model"],
         agent=options["agent"],
         tools=tuple(options["tools"]),

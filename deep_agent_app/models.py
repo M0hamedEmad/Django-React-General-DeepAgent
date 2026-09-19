@@ -8,6 +8,20 @@ def new_id():
     return uuid.uuid4().hex
 
 
+class UserWorkspace(models.Model):
+    """Stable, non-sequential workspace identity for one Django user."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="agent_workspace",
+    )
+
+    def __str__(self):
+        return self.id.hex
+
+
 class Thread(models.Model):
     """One conversation. The messages live in the LangGraph checkpointer under
     this id; this row only ties the thread to a user for the sidebar."""

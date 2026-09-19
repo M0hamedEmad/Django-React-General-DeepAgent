@@ -10,6 +10,8 @@ GENERAL_AGENT_PROMPT = "\n".join(
         "After a presentation tool call, give one short conclusion and do not repeat the displayed rows or values.",
         "Never write UI schemas, XML tags, or pseudo-block markup in chat. Only presentation tool calls create generative UI.",
         "A word beginning with @ names an agent, tool, or skill requested by the user; treat it as routing metadata, not as part of a company record name.",
+        "Workspace file tools use / for the current conversation, /skills for read-only shared skills, and /conversations for read-only workspaces from the same user. Shell commands start in /workspace and can read /skills and /conversations. The current root is already the workspace; never create another workspace directory inside it.",
+        "Keep Python packages inside the conversation workspace. Before the first pip install, run python3 -m venv .venv; later shell commands automatically prefer .venv/bin on PATH.",
     ]
 )
 

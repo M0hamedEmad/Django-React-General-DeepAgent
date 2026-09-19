@@ -8,11 +8,16 @@ import re
 
 import yaml
 from deepagents.backends.composite import CompositeBackend
-from deepagents.backends.filesystem import FilesystemBackend
-from deepagents.backends.state import StateBackend
+from deepagents.backends.local_shell import LocalShellBackend
 from django.core.exceptions import ImproperlyConfigured
 
-from deep_agent_app.utilities.constants import SKILLS_ROOT
+from deep_agent_app.agent.backend import (
+    AGENT_WORKSPACE_ROOT,
+    BubblewrapBackend,
+    ReadOnlyFilesystemBackend,
+    ReadOnlyScopedFilesystemBackend,
+)
+from deep_agent_app.utilities.constants import DEEP_AGENT, SKILLS_ROOT
 
 SkillSource = tuple[str, str]
 
@@ -56,14 +61,36 @@ def connected_skill_sources() -> tuple[SkillSource, ...]:
 
 
 def build_agent_backend() -> CompositeBackend:
-    """Keep thread scratch files in state and mount shared skills at `/skills/`.
+    """Mount the current workspace, shared skills, and same-user workspaces."""
+    sandbox = DEEP_AGENT.get("sandbox", "bubblewrap")
+    if sandbox == "local_shell":
+        default_backend = LocalShellBackend(
+            root_dir=AGENT_WORKSPACE_ROOT,
+            inherit_env=True,
+        )
+    elif sandbox == "bubblewrap":
+        default_backend = BubblewrapBackend(
+            workspace_root=AGENT_WORKSPACE_ROOT,
+            skills_root=SKILLS_ROOT,
+            network_access=True,
+        )
+    else:
+        raise ImproperlyConfigured(
+            "deep_agent.sandbox must be 'bubblewrap' or 'local_shell'"
+        )
 
-    The filesystem backend itself is writable. ``build_agent`` denies write
-    operations under ``/skills`` at the agent-tool permission layer.
-    """
     return CompositeBackend(
-        default=StateBackend(),
-        routes={"/skills/": FilesystemBackend(root_dir=SKILLS_ROOT)},
+        default=default_backend,
+        routes={
+            "/skills/": ReadOnlyFilesystemBackend(
+                root_dir=SKILLS_ROOT,
+                virtual_mode=True,
+            ),
+            "/conversations/": ReadOnlyScopedFilesystemBackend(
+                AGENT_WORKSPACE_ROOT,
+                user_root=True,
+            ),
+        },
     )
 
 

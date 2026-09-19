@@ -16,6 +16,7 @@ venv/
 *.sqlite-shm
 *.sqlite-wal
 staticfiles/
+tmp/
 *.log
 
 # Private configuration

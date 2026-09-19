@@ -17,6 +17,8 @@ Use only the sections appropriate to the planning level.
 | ... | To be defined | ... | Proposed: ... |
 
 Avoid replacing meaningful outcomes with task completion percentages.
+Unknown pilot sizes, percentages, durations, and acceptance thresholds remain
+`To be defined`; never silently turn an example into an approved gate.
 
 ## Scope
 
@@ -50,7 +52,10 @@ Avoid replacing meaningful outcomes with task completion percentages.
 |---|---|---|---|---|---|
 | 1 | ... | ... | ... | Week 1 | Proposed |
 
-Use calendar dates only when an anchor is supplied or confirmed.
+Do not derive intermediate calendar deadlines from the final target date alone.
+Use dependency order or relative periods when durations are unknown. Calculate
+proposed dates only when the user supplied the necessary durations and asked
+for a schedule; show the calculation basis.
 
 ## Risks
 
@@ -72,4 +77,3 @@ Use calendar dates only when an anchor is supplied or confirmed.
 | ... | Unassigned | Not set | ... |
 
 End with the smallest set of actions needed to validate assumptions and start the first unblocked workstream.
-

@@ -28,7 +28,7 @@ from deep_agent_app.runtime import RuntimeCapacityError, agent_runtime
 from deep_agent_app.utilities import model_registry
 from deep_agent_app.agent.llm import clients as llm_clients
 from deep_agent_app.agent.llm import reasoning as reasoning_module
-from deep_agent_app.models import Thread
+from deep_agent_app.models import Thread, UserWorkspace
 
 TURN = [
     {"type": "thinking", "who": "main", "text": "hmm"},
@@ -81,6 +81,7 @@ def replay(events):
     async def run_turn(
         thread_id,
         text=None,
+        workspace_id=None,
         resume=None,
         options=None,
         message_id=None,
@@ -95,6 +96,7 @@ def replay(events):
 def failing(
     thread_id,
     text=None,
+    workspace_id=None,
     resume=None,
     options=None,
     message_id=None,
@@ -386,6 +388,11 @@ class AskUserBatchUnitTests(SimpleTestCase):
 
 class ApiTestCase(TestCase):
     def setUp(self):
+        workspace_migration_patcher = patch(
+            "deep_agent_app.views.migrate_legacy_user_workspace"
+        )
+        self.workspace_migration = workspace_migration_patcher.start()
+        self.addCleanup(workspace_migration_patcher.stop)
         # aforce_login does not check a password. Avoid spending most of the
         # test suite hashing two passwords before every API test.
         self.user = User.objects.create_user("mona")
@@ -503,7 +510,9 @@ class ChatApiTests(ApiTestCase):
         )
 
         thread = await Thread.objects.aget(id="t1")
+        workspace = await UserWorkspace.objects.aget(user=self.user)
         self.assertEqual(thread.user_id, self.user.id)
+        self.assertEqual(len(workspace.id.hex), 32)
         self.assertEqual(thread.title, "how many orders?")
         self.assertFalse(chat.is_turn_running("t1"))
 
@@ -514,6 +523,7 @@ class ChatApiTests(ApiTestCase):
         async def run_turn(
             thread_id,
             text=None,
+            workspace_id=None,
             resume=None,
             options=None,
             message_id=None,
@@ -575,6 +585,7 @@ class ChatApiTests(ApiTestCase):
         async def run_turn(
             thread_id,
             text=None,
+            workspace_id=None,
             resume=None,
             options=None,
             message_id=None,
@@ -629,6 +640,7 @@ class ChatApiTests(ApiTestCase):
         async def run_turn(
             thread_id,
             text=None,
+            workspace_id=None,
             resume=None,
             options=None,
             message_id=None,
@@ -745,6 +757,7 @@ class ChatApiTests(ApiTestCase):
         async def run_turn(
             thread_id,
             text=None,
+            workspace_id=None,
             resume=None,
             options=None,
             message_id=None,
@@ -792,6 +805,7 @@ class ChatApiTests(ApiTestCase):
         async def run_turn(
             thread_id,
             text=None,
+            workspace_id=None,
             resume=None,
             options=None,
             message_id=None,
@@ -933,6 +947,7 @@ class ChatApiTests(ApiTestCase):
         async def run_turn(
             thread_id,
             text=None,
+            workspace_id=None,
             resume=None,
             options=None,
             message_id=None,
@@ -1100,15 +1115,22 @@ class ChatApiTests(ApiTestCase):
     async def test_delete_thread(self):
         await self.login()
         thread = await Thread.objects.acreate(user=self.user)
+        workspace = await UserWorkspace.objects.acreate(user=self.user)
         deleted = []
 
         async def delete_thread(thread_id):
             deleted.append(thread_id)
 
-        with patch.object(chat, "delete_checkpoint_history", delete_thread):
+        with (
+            patch.object(chat, "delete_checkpoint_history", delete_thread),
+            patch(
+                "deep_agent_app.views.delete_conversation_workspace"
+            ) as delete_workspace,
+        ):
             response = await self.async_client.delete(f"/api/threads/{thread.id}/")
         self.assertEqual(response.status_code, 204)
         self.assertEqual(deleted, [thread.id])
+        delete_workspace.assert_called_once_with(workspace.id.hex, thread.id)
         self.assertFalse(await Thread.objects.filter(id=thread.id).aexists())
 
     async def test_config(self):
@@ -2733,6 +2755,7 @@ class ModelSelectionTests(TestCase):
                 async for event in chat.run_turn(
                     "ctx",
                     "/report sales",
+                    workspace_id="workspace-1",
                     options={
                         "model": "custom",
                         "thinking": True,
@@ -2750,6 +2773,8 @@ class ModelSelectionTests(TestCase):
         self.assertEqual(
             fake.call[2]["context"],
             TurnContext(
+                workspace_id="workspace-1",
+                thread_id="ctx",
                 model="custom",
                 thinking="high",
                 plan=True,

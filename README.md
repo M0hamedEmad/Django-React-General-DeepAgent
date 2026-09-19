@@ -104,6 +104,9 @@ frontend production build.
 
 ## Production and scaling
 
+Before deploying on Ubuntu, configure and verify the command sandbox using
+[the Bubblewrap deployment guide](docs/ubuntu-bubblewrap-sandbox.md).
+
 ```bash
 DJANGO_SETTINGS_MODULE=config.settings.production \
 python -m uvicorn config.asgi:application --host 0.0.0.0 --port 8000 --workers 1

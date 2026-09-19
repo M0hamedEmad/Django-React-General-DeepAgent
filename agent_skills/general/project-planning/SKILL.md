@@ -1,6 +1,7 @@
 ---
 name: project-planning
 description: Turn a company objective or change into an actionable project, implementation, rollout, launch, migration, or roadmap plan. Use whenever the user asks how to execute an initiative, define scope, create phases or milestones, assign ownership, sequence dependencies, estimate a timeline, identify project risks, or recover a delayed project. Do not use for a simple personal task list, a meeting agenda, or a retrospective summary with no future execution work.
+required-tools: [ask_user, present_report]
 ---
 
 # Project Planning
@@ -13,10 +14,12 @@ Turn an objective into a plan that a team can execute, inspect, and revise.
 - Match detail to certainty. Early ideas need decision points and ranges; approved initiatives can support owners, dates, and detailed work packages.
 - Build around deliverables and acceptance criteria, not vague activity labels such as “work on integration”.
 - Make dependencies visible. A plausible list of tasks is not a plan until its sequence and blockers are clear.
-- Preserve every supplied date, budget, owner, constraint, and metric exactly. Never invent precision to make the plan look complete.
+- Preserve every supplied date, budget, owner, constraint, and metric exactly. Never invent precision to make the plan look complete. A final deadline alone does not justify adding earlier calendar deadlines.
+- Do not create hard pilot sizes, completion percentages, acceptance thresholds, durations, or owner-appointment gates from thin air. Mark them `To be defined`; if useful, label alternatives as unapproved proposals rather than acceptance criteria.
 - Treat the plan as a proposal until the user says it is approved. Do not imply that work has started, resources are committed, or people accepted assignments.
+- Do not turn suggested acceptance checks into already-approved thresholds or invent the status of permits, inspections, reviews, staff training, or other work. If a step or gate is only a reasonable suggestion, label it `Proposed` and leave its threshold undefined.
 
-The agent's internal planning tool may help manage its own work, but that private checklist is not the user's project plan. Deliver the project plan explicitly in chat or through `show_report`.
+The agent's internal planning tool may help manage its own work, but that private checklist is not the user's project plan. Deliver the project plan explicitly in chat or through `present_report`.
 
 ## Workflow
 
@@ -43,6 +46,8 @@ Identify:
 
 Infer low-risk details from the request. If missing information would change scope, sequence, cost, or feasibility, call `ask_user` once with every material question already known. Let the user skip questions and record any resulting assumptions visibly.
 
+If the user specifically requests a conditional recovery plan or decision options, do not interrupt solely because an owner or revised forecast is missing. Show the unknown, give a bounded conditional plan, and name the decision to make. Ask before committing resources or taking action, or when no useful conditional answer is possible.
+
 ### 3. Decompose by deliverable
 
 Create workstreams only where they represent distinct outcomes or ownership. Within each workstream:
@@ -63,9 +68,11 @@ Link milestones to completed outcomes, not to elapsed time. Identify:
 - external dependencies outside the project team's control;
 - decision gates requiring approval;
 - work that can proceed in parallel;
+- work explicitly approved to proceed in parallel must not acquire a new prerequisite without evidence;
+- do not add a blocking dependency merely because two steps appear in a sensible order; distinguish a confirmed blocker from a proposed sequencing preference;
 - the likely critical path, when enough timing information exists.
 
-If calendar anchors are missing, use relative periods such as `Week 1` or `Phase 2`; do not invent calendar dates. Use ranges for uncertain estimates and label the basis of the estimate.
+Use dependency order or relative periods such as `Week 1` or `Phase 2` when intermediate dates are unknown. Even if a final deadline is supplied, do not assign calendar dates to earlier milestones unless the user supplied them or gave durations and explicitly asked you to calculate a proposed schedule. Use ranges for uncertain estimates and label the basis of the estimate.
 
 ### 5. Plan ownership and governance
 
@@ -88,7 +95,7 @@ Surface contradictions and infeasible constraints directly. Do not make a schedu
 
 ### 7. Deliver the plan
 
-Use chat for a short outline. Use `show_report` for a working or execution plan with several workstreams, milestone tables, risks, or status indicators.
+Use chat for a requested concise outline or recovery plan. Do not call `present_report` merely because a concise answer has several headings or acceptance checks. Use `present_report` for an explicitly requested report or a substantial working or execution plan with several workstreams, milestone tables, risks, or status indicators.
 
 In the side panel:
 
@@ -96,7 +103,7 @@ In the side panel:
 - use a `table` for milestones, workstreams, decision gates, and risks;
 - use `kpis` only for supplied targets or plan-level counts that are genuinely useful;
 - use a `chart` only when a timeline or comparison is clearer visually and its values are supported;
-- use `link` for an authoritative source or existing project document.
+- use `links` for authoritative sources or existing project documents.
 
 After opening the report, state the immediate next decision and biggest delivery risk in chat rather than repeating the full plan.
 
@@ -130,4 +137,3 @@ Before delivering, verify that:
 - every blocking dependency has a resolution path or an explicit decision needed;
 - risks and assumptions are not mixed together;
 - the plan does not claim authorization or progress that has not happened.
-

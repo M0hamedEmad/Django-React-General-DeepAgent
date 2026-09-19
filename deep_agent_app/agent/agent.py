@@ -4,8 +4,8 @@ import logging
 import time
 
 from deepagents import HarnessProfile, create_deep_agent, register_harness_profile
-from deepagents.middleware.filesystem import FilesystemPermission
 
+from .backend import WorkspaceContextMiddleware
 from .context import TurnContext
 from .integrations import PersistentMcpTools
 from .llm.clients import build_llm
@@ -14,7 +14,7 @@ from .middleware.ask_user_recovery import recover_ask_user_markup
 from .middleware.planning import PlanModeMiddleware
 from .middleware.selection import TurnSelectionMiddleware
 from .prompts import GENERAL_AGENT_PROMPT
-from .skills import build_agent_backend, skill_catalog
+from .skills import build_agent_backend, skill_catalog, main_skill_sources
 from .subagent import CONNECTED_SUBAGENT_NAME, get_subagents
 from .tools.ask_user import ask_user
 from .tools.present_ui import present_ui
@@ -44,7 +44,7 @@ async def build_agent(checkpointer):
 
     model = build_llm("auto", 0.0)
     agents = get_subagents(model=model, mcp_tools=connected_tools)
-    middleware = [PlanModeMiddleware()]
+    middleware = [WorkspaceContextMiddleware(), PlanModeMiddleware()]
     if agents:
         middleware.append(TurnSelectionMiddleware(CONNECTED_SUBAGENT_NAME))
     middleware.extend([recover_ask_user_markup, model_selector])
@@ -63,15 +63,8 @@ async def build_agent(checkpointer):
         backend=build_agent_backend(),
         checkpointer=checkpointer,
         context_schema=TurnContext,
-        permissions=[
-            FilesystemPermission(
-                operations=["write"],
-                paths=["/skills", "/skills/**"],
-                mode="deny",
-            )
-        ],
         # interrupt_on={"internet_search": True},
-        # skills=main_skill_sources(),
+        skills=main_skill_sources(),
     )
     log.info("built deep agent in %.3f seconds", time.perf_counter() - started)
     return main_agent

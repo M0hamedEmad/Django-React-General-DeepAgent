@@ -51,6 +51,16 @@ class ChatViewUnitTests(SimpleTestCase):
         with self.assertRaisesRegex(ValueError, "body must be a JSON object"):
             ChatView._parse_turn(request)
 
+    def test_chat_view_rejects_unsafe_workspace_id(self):
+        request = RequestFactory().post(
+            "/api/chat/",
+            json.dumps({"thread_id": "..", "message": "hello"}),
+            content_type="application/json",
+        )
+
+        with self.assertRaisesRegex(ValueError, "letters, numbers"):
+            ChatView._parse_turn(request)
+
     async def test_ai_sdk_stream_owns_protocol_state_and_releases_turn(self):
         async def run_turn(*args, **kwargs):
             yield {"type": "token", "who": "main", "text": "Hello"}

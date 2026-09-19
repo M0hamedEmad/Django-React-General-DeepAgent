@@ -50,6 +50,7 @@ DEEP_AGENT = freeze(secret_section("deep_agent"))
 LLM_PROVIDERS = freeze(secret_section("llm")["providers"])
 TOOLS = freeze(secret_section("tools"))
 AGENT_RUNTIME = freeze(secret_section("runtime"))
+CONTEXT_COMPACTION = freeze(AGENT_RUNTIME.get("context_compaction", {}))
 MCP_SERVERS = freeze(DEEP_AGENT.get("mcp_servers", {}))
 CONNECTED_SYSTEM_ENABLED = any(
     server.get("enabled", False) for server in MCP_SERVERS.values()
@@ -70,6 +71,8 @@ TAVILY_API_KEY = TOOLS.get("tavily_api_key", "")
 CHECKPOINT_DB = BASE_DIR / DEEP_AGENT["checkpoint_db"]
 MAX_CONCURRENT_RUNS = int(AGENT_RUNTIME.get("max_concurrent_runs", 4))
 RUN_TIMEOUT_SECONDS = float(AGENT_RUNTIME.get("run_timeout_seconds", 1800))
+MAX_MODEL_CALLS_PER_TURN = int(AGENT_RUNTIME.get("max_model_calls_per_turn", 64))
+MAX_TOOL_CALLS_PER_TURN = int(AGENT_RUNTIME.get("max_tool_calls_per_turn", 128))
 SSE_HEARTBEAT_SECONDS = float(AGENT_RUNTIME.get("sse_heartbeat_seconds", 15))
 # Bound per-turn token/tool events when a browser or proxy reads slowly.
 STREAM_EVENT_BUFFER_SIZE = int(AGENT_RUNTIME.get("event_buffer_size", 256))

@@ -16,7 +16,9 @@ MODEL_CLIENT_CACHE_SIZE = 32
 def _client_options(provider, temperature: float) -> dict:
     """Translate immutable app configuration into integration arguments."""
     model_provider = provider.get("model_provider", "openai")
-    options = {"api_key": provider["api_key"], "temperature": temperature}
+    options = {"api_key": provider["api_key"]}
+    if provider.get("send_temperature", True):
+        options["temperature"] = temperature
     if provider.get("base_url"):
         options["base_url"] = provider["base_url"]
     if provider.get("timeout"):

@@ -162,8 +162,31 @@ class AgentPackageTests(SimpleTestCase):
         )
 
         self.assertIn("Invalid present_report data", result)
+        self.assertIn("blocks[0] (markdown) requires content", result)
+        self.assertIn("allowed: type, content", result)
+        self.assertIn("section is optional", result)
+        self.assertNotIn("legacy field", result)
         self.assertNotIn("validation errors", result)
         self.assertNotIn("pydantic.dev", result)
+
+    def test_present_report_reports_row_width_without_echoing_values(self):
+        from deep_agent_app.agent.tools.reports import present_report
+
+        result = present_report.invoke(
+            {
+                "title": "Sales",
+                "blocks": [
+                    {
+                        "type": "table",
+                        "columns": ["Region", "Owner"],
+                        "rows": [["private-customer-name"]],
+                    }
+                ],
+            }
+        )
+
+        self.assertIn("one row value per column", result)
+        self.assertNotIn("private-customer-name", result)
 
     def test_present_ui_rejects_report_sized_blocks(self):
         from deep_agent_app.agent.tools.present_ui import ChartBlock, present_ui
@@ -273,6 +296,26 @@ class AgentPackageTests(SimpleTestCase):
             ):
                 skills.skill_catalog((("/skills/general", "Company"),))
 
+    def test_skill_catalog_rejects_unavailable_tool_dependency(self):
+        from deep_agent_app.agent import skills
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            skill_dir = root / "general" / "example"
+            skill_dir.mkdir(parents=True)
+            (skill_dir / "SKILL.md").write_text(
+                "---\nname: example\ndescription: Example skill.\n"
+                "required-tools: [show_report]\n---\n",
+                encoding="utf-8",
+            )
+            with (
+                patch.object(skills, "SKILLS_ROOT", root),
+                self.assertRaisesRegex(
+                    ImproperlyConfigured, "unavailable tool 'show_report'"
+                ),
+            ):
+                skills.skill_catalog((("/skills/general", "Company"),))
+
     def test_app_and_deep_agents_discover_the_same_skills(self):
         from deepagents.middleware.skills import SkillsMiddleware
 
@@ -290,6 +333,15 @@ class AgentPackageTests(SimpleTestCase):
             {item["name"]: item["path"] for item in loaded["skills_metadata"]},
         )
         self.assertIs(skills.skill_catalog(), catalog)
+
+    def test_bundled_skills_use_the_registered_report_contract(self):
+        from deep_agent_app.utilities.constants import SKILLS_ROOT
+
+        for name in ("executive-brief", "project-planning"):
+            instructions = (SKILLS_ROOT / "general" / name / "SKILL.md").read_text()
+            self.assertIn("`present_report`", instructions)
+            self.assertNotIn("`show_report`", instructions)
+            self.assertNotIn("`link`", instructions)
 
     async def test_main_composition_uses_registered_subagents(self):
         from deep_agent_app.agent import agent as builder
@@ -320,7 +372,26 @@ class AgentPackageTests(SimpleTestCase):
         get_tools.assert_awaited_once_with()
         make_subagents.assert_called_once()
         self.assertIs(make_subagents.call_args.kwargs["mcp_tools"], erp_tools)
-        self.assertEqual(create.call_args.kwargs["subagents"], [subagent])
+        registered = create.call_args.kwargs["subagents"]
+        self.assertEqual(registered[0]["name"], "general-purpose")
+        self.assertEqual(registered[0]["skills"], [("/skills/general", "Company")])
+        self.assertIn(builder.model_selector, registered[0]["middleware"])
+        self.assertTrue(
+            any(
+                isinstance(item, builder.TurnSelectionMiddleware)
+                for item in registered[0]["middleware"]
+            )
+        )
+        self.assertIs(registered[1], subagent)
+        self.assertEqual(
+            create.call_args.kwargs["skills"], (("/skills/general", "Company"),)
+        )
+        self.assertTrue(
+            any(
+                isinstance(item, builder.TurnSelectionMiddleware)
+                for item in create.call_args.kwargs["middleware"]
+            )
+        )
         self.assertEqual(
             [
                 getattr(tool, "name", None) or tool.__name__
@@ -336,6 +407,33 @@ class AgentPackageTests(SimpleTestCase):
         )
         self.assertNotIn("interrupt_on", create.call_args.kwargs)
         self.assertNotIn("permissions", create.call_args.kwargs)
+
+    async def test_main_selection_stays_active_without_connected_subagent(self):
+        from deep_agent_app.agent import agent as builder
+
+        with (
+            patch.object(
+                builder.PersistentMcpTools,
+                "load_registered_tools",
+                AsyncMock(return_value=[]),
+            ),
+            patch.object(builder, "get_subagents", return_value=[]),
+            patch.object(builder, "build_llm", return_value=Mock(name="model")),
+            patch.object(
+                builder, "build_agent_backend", return_value=Mock(name="backend")
+            ),
+            patch.object(
+                builder, "create_deep_agent", return_value=Mock(name="graph")
+            ) as create,
+        ):
+            await builder.build_agent(Mock(name="checkpointer"))
+
+        selection = next(
+            item
+            for item in create.call_args.kwargs["middleware"]
+            if isinstance(item, builder.TurnSelectionMiddleware)
+        )
+        self.assertIsNone(selection.connected_subagent_name)
 
     def test_company_subagent_is_plain_definition_with_injected_tools(self):
         from deep_agent_app.agent import subagent
@@ -368,8 +466,14 @@ class AgentPackageTests(SimpleTestCase):
         self.assertIs(definition["model"], model)
         self.assertIs(definition["tools"][0], tool)
         self.assertEqual(
-            definition["middleware"],
+            definition["middleware"][2:],
             [subagent.recover_ask_user_markup, subagent.model_selector],
+        )
+        self.assertIsInstance(
+            definition["middleware"][0], subagent.WorkspaceContextMiddleware
+        )
+        self.assertIsInstance(
+            definition["middleware"][1], subagent.ToolCallBudgetMiddleware
         )
         self.assertEqual(definition["skills"], [("/skills/sales", "Sales")])
         self.assertNotIn("interrupt_on", definition)
@@ -383,6 +487,19 @@ class AgentPackageTests(SimpleTestCase):
                 [],
             )
             self.assertEqual(subagent.composer_subagents(), [])
+
+    def test_process_shared_mcp_rejects_user_scoped_credentials(self):
+        from deep_agent_app.agent.integrations import configured_mcp
+
+        with (
+            patch.object(
+                configured_mcp,
+                "MCP_SERVERS",
+                {"company": {"enabled": True, "credential_scope": "user"}},
+            ),
+            self.assertRaisesRegex(ImproperlyConfigured, "service-scoped credentials"),
+        ):
+            configured_mcp.configured_mcp_servers()
 
     def test_composer_subagents_are_derived_from_registered_definitions(self):
         from deep_agent_app.agent import subagent
@@ -745,6 +862,39 @@ class AgentPackageTests(SimpleTestCase):
         self.assertEqual(len(consumed), 10)
         self.assertEqual(events[-1]["result"], "x" * 150)
 
+    async def test_handled_tool_validation_error_reaches_frontend_error_state(self):
+        from langchain_core.messages import ToolMessage
+
+        correction = (
+            "Invalid present_report data: blocks[0] (table) needs one row value "
+            "per column."
+        )
+
+        async def deltas():
+            if False:
+                yield ""
+
+        async def calls():
+            yield SimpleNamespace(
+                tool_call_id="report-1",
+                tool_name="present_report",
+                input={"title": "Broken", "blocks": []},
+                output_deltas=deltas(),
+                error=None,
+                output=ToolMessage(
+                    content=correction,
+                    name="present_report",
+                    tool_call_id="report-1",
+                    status="error",
+                ),
+            )
+
+        events = []
+        await chat_streaming.pump_tool_calls(calls(), "main", events.append)
+
+        self.assertEqual(events[-1]["type"], "tool_result")
+        self.assertEqual(events[-1]["error"], correction)
+
     async def test_async_event_emission_applies_backpressure(self):
         queue = asyncio.Queue(maxsize=1)
         await queue.put("first")
@@ -887,6 +1037,80 @@ class AgentPackageTests(SimpleTestCase):
             selected_general_skill.system_message.content,
         )
 
+    async def test_disabled_web_tool_is_rejected_before_execution(self):
+        from deep_agent_app.agent.context import TurnContext
+        from deep_agent_app.agent.middleware.selection import TurnSelectionMiddleware
+
+        middleware = TurnSelectionMiddleware(None)
+        request = SimpleNamespace(
+            runtime=SimpleNamespace(context=TurnContext(tools=())),
+            tool_call={
+                "name": "fetch_webpage_content",
+                "args": {"url": "https://example.com"},
+                "id": "web-call",
+            },
+        )
+        handler = AsyncMock()
+
+        result = await middleware.awrap_tool_call(request, handler)
+
+        self.assertEqual(result.status, "error")
+        self.assertEqual(result.tool_call_id, "web-call")
+        handler.assert_not_awaited()
+
+        request.runtime.context = TurnContext(tools=("web_search",))
+        handler.return_value = "allowed"
+        self.assertEqual(await middleware.awrap_tool_call(request, handler), "allowed")
+        handler.assert_awaited_once_with(request)
+
+    async def test_web_fetch_rejects_private_redirect_and_large_response(self):
+        from deep_agent_app.agent.tools import search
+
+        requested = []
+
+        def redirect_handler(request):
+            requested.append(str(request.url))
+            return httpx.Response(302, headers={"location": "http://127.0.0.1/private"})
+
+        def public_only(host):
+            if host == "127.0.0.1":
+                raise ValueError("URL host is not public")
+
+        with (
+            patch.object(search, "_check_public_host", side_effect=public_only),
+            patch.object(
+                search,
+                "webpage_client",
+                side_effect=lambda: httpx.AsyncClient(
+                    transport=httpx.MockTransport(redirect_handler),
+                    follow_redirects=False,
+                ),
+            ),
+        ):
+            result = await search.fetch_webpage_content("https://example.com/start")
+
+        self.assertIn("URL host is not public", result)
+        self.assertEqual(requested, ["https://example.com/start"])
+
+        with (
+            patch.object(search, "_check_public_host"),
+            patch.object(
+                search,
+                "webpage_client",
+                side_effect=lambda: httpx.AsyncClient(
+                    transport=httpx.MockTransport(
+                        lambda request: httpx.Response(
+                            200,
+                            headers={"content-type": "text/html"},
+                            content=b"x" * (search.MAX_WEB_BYTES + 1),
+                        )
+                    )
+                ),
+            ),
+        ):
+            oversized = await search.fetch_webpage_content("https://example.com/")
+        self.assertIn("exceeds size limit", oversized)
+
     def test_composer_tools_come_only_from_mentions_json(self):
         from deep_agent_app.utilities import composer
 
@@ -968,6 +1192,7 @@ class AgentPackageTests(SimpleTestCase):
 
     def test_mention_prompts_preserve_user_order_and_ignore_unknown_values(self):
         from deep_agent_app.utilities import composer
+        from deep_agent_app.utilities.constants import CONNECTED_SYSTEM_ENABLED
 
         prompts = composer.mention_prompts(
             (
@@ -978,7 +1203,27 @@ class AgentPackageTests(SimpleTestCase):
         )
 
         self.assertIn("`internet_search` tool", prompts[0])
-        self.assertEqual(len(prompts), 1)
+        self.assertEqual(len(prompts), 2 if CONNECTED_SYSTEM_ENABLED else 1)
+        if CONNECTED_SYSTEM_ENABLED:
+            self.assertIn("`connected` agent", prompts[1])
+
+    def test_path_style_mention_ids_are_safe_and_supported(self):
+        from deep_agent_app.utilities.composer import MENTION_ID_RE
+
+        for identifier in (
+            "skills/finance/audit",
+            "plugin-suite/report-builder",
+            "general-purpose",
+        ):
+            self.assertIsNotNone(MENTION_ID_RE.fullmatch(identifier))
+
+        for identifier in (
+            "/skills/finance",
+            "skills/finance/",
+            "skills//finance",
+            "skills/../finance",
+        ):
+            self.assertIsNone(MENTION_ID_RE.fullmatch(identifier))
 
     async def test_asgi_lifespan_closes_the_agent_runtime(self):
         from deep_agent_app.asgi import AgentLifespanApplication

@@ -5,14 +5,18 @@ from django.core.checks import Error, Tags, Warning, register
 
 from deep_agent_app.utilities.constants import (
     MAX_CONCURRENT_RUNS,
+    MAX_MODEL_CALLS_PER_TURN,
+    MAX_TOOL_CALLS_PER_TURN,
     MCP_SERVERS,
     RUN_TIMEOUT_SECONDS,
     STREAM_EVENT_BUFFER_SIZE,
 )
 from deep_agent_app.utilities.model_registry import (
-    DEFAULT_PROVIDER,
+    MODEL_ROLES,
     PROVIDERS,
 )
+from deep_agent_app.agent.middleware.compaction import compaction_policy
+from django.core.exceptions import ImproperlyConfigured
 
 
 def _placeholder(value) -> bool:
@@ -47,6 +51,13 @@ def runtime_contract(app_configs, **kwargs):
                 id="deep_agent.E003",
             )
         )
+    if MAX_MODEL_CALLS_PER_TURN < 1 or MAX_TOOL_CALLS_PER_TURN < 1:
+        issues.append(
+            Error(
+                "runtime model/tool call limits must each be at least 1.",
+                id="deep_agent.E006",
+            )
+        )
     if STREAM_EVENT_BUFFER_SIZE < 1:
         issues.append(
             Error(
@@ -54,14 +65,18 @@ def runtime_contract(app_configs, **kwargs):
                 id="deep_agent.E004",
             )
         )
-    if DEFAULT_PROVIDER not in PROVIDERS:
+    if any(provider_id not in PROVIDERS for provider_id in MODEL_ROLES.values()):
         issues.append(
             Error(
-                "deep_agent.llm_provider must name a configured provider.",
-                hint="Set a real model and API key in the private secrets file.",
+                "deep_agent model roles must name configured providers.",
+                hint="Configure flash_model, main_model, and frontier_model in the private secrets file.",
                 id="deep_agent.E005",
             )
         )
+    try:
+        compaction_policy()
+    except ImproperlyConfigured as exc:
+        issues.append(Error(str(exc), id="deep_agent.E007"))
     return issues
 
 

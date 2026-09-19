@@ -157,6 +157,26 @@ class WorkspaceBackendTests(SimpleTestCase):
         with self.assertRaisesRegex(RuntimeError, "not bound"):
             current_workspace_scope()
 
+    async def test_middleware_binds_model_calls_for_compaction_backend_access(self):
+        middleware = WorkspaceContextMiddleware()
+        request = SimpleNamespace(
+            runtime=SimpleNamespace(
+                context=SimpleNamespace(workspace_id="workspace-7", thread_id="chat-a")
+            )
+        )
+
+        async def handler(_request):
+            return current_workspace_scope()
+
+        scope = await middleware.awrap_model_call(request, handler)
+
+        self.assertEqual(
+            (scope.workspace_id, scope.thread_id),
+            ("workspace-7", "chat-a"),
+        )
+        with self.assertRaisesRegex(RuntimeError, "not bound"):
+            current_workspace_scope()
+
     def test_delete_removes_only_the_requested_conversation(self):
         with TemporaryDirectory() as directory:
             layout = WorkspaceLayout(Path(directory) / "workspaces")
@@ -207,9 +227,7 @@ class BubblewrapBackendTests(SimpleTestCase):
             skills_root=skills,
             bwrap_path=shutil.which("bwrap") or "/usr/bin/bwrap",
             network_access=network_access,
-            slirp4netns_path=(
-                shutil.which("slirp4netns") or "/usr/bin/slirp4netns"
-            ),
+            slirp4netns_path=(shutil.which("slirp4netns") or "/usr/bin/slirp4netns"),
             max_output_bytes=max_output_bytes,
         )
 
@@ -421,13 +439,7 @@ class BubblewrapBackendTests(SimpleTestCase):
             self.assertIn("Successfully installed idna-3.10", response.output)
             self.assertTrue(
                 (
-                    root
-                    / "workspaces"
-                    / "7"
-                    / "chat-a"
-                    / ".venv"
-                    / "bin"
-                    / "python"
+                    root / "workspaces" / "7" / "chat-a" / ".venv" / "bin" / "python"
                 ).exists()
             )
 

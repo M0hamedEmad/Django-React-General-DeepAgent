@@ -299,6 +299,16 @@ class AiSdkEventStream:
             exc = exc.exceptions[0]
         if isinstance(exc, TimeoutError):
             return "The assistant reached its time limit. Please try again."
+        from deep_agent_app.agent.budget import RunBudgetExceeded
+        from deep_agent_app.agent.llm.routing import EmptyModelResponseError
+
+        if isinstance(exc, RunBudgetExceeded):
+            return "The assistant reached its step limit. Continue in a new turn."
+        if isinstance(exc, EmptyModelResponseError):
+            return (
+                "The selected model did not produce an answer after two attempts. "
+                "Please try again or select another model."
+            )
         return "The assistant could not complete this request. Please try again."
 
 
@@ -445,9 +455,10 @@ class ChatView(AuthenticatedApiView):
     def _parse_turn(cls, request):
         body = cls.json_body(request)
         thread_id = body.get("thread_id") or body.get("id")
-        if not isinstance(thread_id, str) or re.fullmatch(
-            r"[A-Za-z0-9_-]{1,64}", thread_id
-        ) is None:
+        if (
+            not isinstance(thread_id, str)
+            or re.fullmatch(r"[A-Za-z0-9_-]{1,64}", thread_id) is None
+        ):
             raise ValueError(
                 "thread_id must be 1-64 letters, numbers, hyphens, or underscores"
             )

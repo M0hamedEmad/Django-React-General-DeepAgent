@@ -131,7 +131,9 @@ class WorkspaceLayout:
         elif target.exists():
             resolved = target.resolve()
             if resolved.parent != user_root.resolve():
-                raise ImproperlyConfigured("conversation workspace escapes its user root")
+                raise ImproperlyConfigured(
+                    "conversation workspace escapes its user root"
+                )
             shutil.rmtree(resolved)
         try:
             user_root.rmdir()
@@ -161,7 +163,7 @@ def bind_workspace(workspace_id: object, thread_id: object):
 
 
 class WorkspaceContextMiddleware(AgentMiddleware):
-    """Bind the shared backend to the authenticated context around tool calls."""
+    """Bind shared backend access to the authenticated turn context."""
 
     @staticmethod
     def _scope(request) -> tuple[str, str]:
@@ -175,6 +177,14 @@ class WorkspaceContextMiddleware(AgentMiddleware):
             return handler(request)
 
     async def awrap_tool_call(self, request, handler):
+        with bind_workspace(*self._scope(request)):
+            return await handler(request)
+
+    def wrap_model_call(self, request, handler):
+        with bind_workspace(*self._scope(request)):
+            return handler(request)
+
+    async def awrap_model_call(self, request, handler):
         with bind_workspace(*self._scope(request)):
             return await handler(request)
 
@@ -434,7 +444,7 @@ class BubblewrapBackend(ScopedFilesystemBackend, SandboxBackendProtocol):
                 "attempt=0; "
                 "until grep -q '^tap0' /proc/net/route; do "
                 "attempt=$((attempt + 1)); "
-                "if [ \"$attempt\" -ge 200 ]; then "
+                'if [ "$attempt" -ge 200 ]; then '
                 "echo 'Sandbox network setup timed out.' >&2; exit 125; "
                 "fi; "
                 "sleep 0.01; "
@@ -482,7 +492,9 @@ class BubblewrapBackend(ScopedFilesystemBackend, SandboxBackendProtocol):
         try:
             child_pid = json.loads(payload)["child-pid"]
         except (json.JSONDecodeError, KeyError, TypeError) as exc:
-            raise _SandboxNetworkError("Bubblewrap returned invalid process data") from exc
+            raise _SandboxNetworkError(
+                "Bubblewrap returned invalid process data"
+            ) from exc
         if not isinstance(child_pid, int) or child_pid <= 0:
             raise _SandboxNetworkError("Bubblewrap returned an invalid child process")
         return child_pid

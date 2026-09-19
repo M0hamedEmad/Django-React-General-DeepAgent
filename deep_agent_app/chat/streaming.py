@@ -6,10 +6,12 @@ import logging
 from typing import Any
 from uuid import uuid4
 
+from langchain_core.messages import ToolMessage
 from langgraph.errors import GraphInterrupt
 from langgraph.types import Interrupt
 
 from deep_agent_app.agent import parse_ask_user_markup
+from deep_agent_app.agent.budget import ACTIVE_RUN_BUDGET
 from deep_agent_app.utilities.constants import TOOL_OUTPUT_LIMIT
 
 log = logging.getLogger(__name__)
@@ -90,19 +92,39 @@ async def pump_messages(channel, who, emit):
     async for message in channel:
         call_id = uuid4().hex
         await emit_event(emit, {"type": "_usage_start", "id": call_id, "who": who})
+        budget = ACTIVE_RUN_BUDGET.get()
+        # The v3 message projection does not expose the summarizer's lc_source
+        # before text deltas arrive. Buffer only in compaction mode, then use
+        # the model response ID recorded by BudgetedSummaryModel to hide its
+        # internal working text while retaining its usage for accounting.
+        buffered = [] if budget and budget.filter_internal_model_text else None
+        target = buffered.append if buffered is not None else emit
         async with asyncio.TaskGroup() as group:
-            group.create_task(pump_deltas(message.text, who, "token", emit))
-            group.create_task(pump_deltas(message.reasoning, who, "thinking", emit))
+            group.create_task(pump_deltas(message.text, who, "token", target))
+            group.create_task(pump_deltas(message.reasoning, who, "thinking", target))
         # Text and reasoning close on message-finish, so output is now final.
         # Driving all three projections concurrently can deadlock the shared
         # experimental stream pump.
-        await pump_usage(message, call_id, who, emit)
+        output = await message.output
+        if buffered is not None:
+            await budget.wait_for_summaries()
+            if not budget.is_internal_message(output.id or message.message_id):
+                for event in buffered:
+                    await emit_event(emit, event)
+        await pump_usage(message, call_id, who, emit, output=output)
 
 
-async def pump_usage(message, call_id, who, emit):
+async def pump_usage(message, call_id, who, emit, *, output=None):
     """Wait for one provider response and retain its reported usage."""
-    output = await message.output
+    if output is None:
+        output = await message.output
     metadata = output.response_metadata
+    budget = ACTIVE_RUN_BUDGET.get()
+    internal_provider = (
+        budget.internal_message_provider(output.id or message.message_id)
+        if budget is not None
+        else None
+    )
     await emit_event(
         emit,
         {
@@ -111,6 +133,7 @@ async def pump_usage(message, call_id, who, emit):
             "who": who,
             "provider": metadata.get("model_provider") or "unknown",
             "model": metadata.get("model_name") or "unknown",
+            "provider_id": internal_provider,
             "usage": output.usage_metadata,
         },
     )
@@ -202,8 +225,21 @@ async def pump_tool_calls(channel, who, emit):
                 chunks.append(chunk)
                 remaining -= len(chunk)
         partial = "".join(chunks)
-        if is_interrupt(call.error):
+        output = call.output
+        error = call.error
+        if is_interrupt(error):
             continue
+        # LangChain represents handled schema/validation failures as terminal
+        # ToolMessages with status="error". They are not raised exceptions, so
+        # the live stream must promote them to the AI SDK error state just as
+        # checkpoint history already does. This lets the report/visual UI show
+        # the bounded backend correction instead of rendering invalid inputs.
+        if (
+            error is None
+            and isinstance(output, ToolMessage)
+            and output.status == "error"
+        ):
+            error = result_text(output) or "The tool could not complete the request."
         await emit_event(
             emit,
             {
@@ -211,8 +247,8 @@ async def pump_tool_calls(channel, who, emit):
                 "who": who,
                 "id": call.tool_call_id,
                 "name": call.tool_name,
-                "result": partial or result_text(call.output)[:TOOL_OUTPUT_LIMIT],
-                "error": None if call.error is None else str(call.error),
+                "result": partial or result_text(output)[:TOOL_OUTPUT_LIMIT],
+                "error": None if error is None else str(error),
             },
         )
 

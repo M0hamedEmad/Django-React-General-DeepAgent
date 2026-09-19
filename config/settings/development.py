@@ -17,6 +17,3 @@ if DATABASES["default"]["ENGINE"] == "django.db.backends.sqlite3":  # noqa: F405
         "init_command": "PRAGMA journal_mode=WAL;",
     }
 
-
-
-

@@ -92,12 +92,72 @@ def _present_report(
     )
 
 
-def _validation_message(_: ValidationError) -> str:
-    """Return one correction instruction instead of a full union error tree."""
+_BLOCK_FIELDS = {
+    "section": "type, title, description",
+    "markdown": "type, content",
+    "kpis": "type, items",
+    "chart": "type, kind, title, labels, series",
+    "table": "type, title, columns, rows",
+    "status": "type, tone, title, message",
+    "links": "type, title, items",
+}
+
+
+def _validation_message(error: ValidationError) -> str:
+    """Give bounded, input-free field guidance instead of a union error tree."""
+    details = []
+    for issue in error.errors(
+        include_input=False, include_context=False, include_url=False
+    ):
+        loc = issue["loc"]
+        kind = issue["type"]
+        if loc[:1] == ("title",):
+            detail = "title must be 1–120 characters"
+        elif loc[:1] == ("subtitle",):
+            detail = "subtitle must be at most 180 characters"
+        elif loc[:1] == ("blocks",) and len(loc) == 1:
+            detail = "blocks must contain 1–20 valid blocks"
+        elif loc[:1] == ("blocks",) and len(loc) >= 2:
+            index = loc[1]
+            prefix = f"blocks[{index}]" if isinstance(index, int) else "blocks"
+            variant = loc[2] if len(loc) >= 3 else None
+            if kind in {"union_tag_invalid", "union_tag_not_found"}:
+                detail = f"{prefix} needs a valid type: {', '.join(REPORT_BLOCK_TYPES)}"
+            elif variant in _BLOCK_FIELDS:
+                label = f"{prefix} ({variant})"
+                field = loc[3] if len(loc) >= 4 else None
+                if kind == "missing" and field in _BLOCK_FIELDS[variant].split(", "):
+                    detail = f"{label} requires {field}"
+                elif kind == "extra_forbidden":
+                    detail = (
+                        f"{label} has an unsupported field; allowed: "
+                        f"{_BLOCK_FIELDS[variant]}"
+                    )
+                elif kind == "value_error" and variant == "table":
+                    detail = f"{label} needs one row value per column"
+                elif kind == "value_error" and variant == "chart":
+                    detail = f"{label} needs one numeric value per label in each series"
+                elif isinstance(field, str) and field in _BLOCK_FIELDS[variant].split(
+                    ", "
+                ):
+                    detail = f"{label} has invalid {field}; allowed: {_BLOCK_FIELDS[variant]}"
+                else:
+                    detail = (
+                        f"{label} has invalid values; allowed: {_BLOCK_FIELDS[variant]}"
+                    )
+            else:
+                detail = f"{prefix} needs a valid type: {', '.join(REPORT_BLOCK_TYPES)}"
+        else:
+            detail = "use only title, optional subtitle, and blocks"
+        if detail not in details:
+            details.append(detail)
+        if len(details) == 2:
+            break
+    correction = "; ".join(details) if details else "check title and blocks"
     return (
-        "Invalid present_report data. Use title, optional subtitle, and 1-20 blocks. "
-        "Every block needs type: section, markdown, kpis, chart, table, status, or "
-        "links. Correct the arguments and call present_report again."
+        f"Invalid present_report data: {correction}. "
+        "Block types may be mixed; section is optional. Correct the arguments "
+        "and call present_report again."
     )
 
 

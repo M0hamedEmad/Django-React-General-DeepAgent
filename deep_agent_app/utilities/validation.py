@@ -31,7 +31,9 @@ def validate_model_choice(model):
     if model in (None, ""):
         return AUTO_MODEL
     if not isinstance(model, str) or (
-        model != AUTO_MODEL and model not in model_registry.PROVIDERS
+        model != AUTO_MODEL
+        and model not in model_registry.MODEL_ROLES
+        and model not in model_registry.PROVIDERS
     ):
         raise ValueError("unknown or unavailable model")
     return model
@@ -40,7 +42,9 @@ def validate_model_choice(model):
 def resolve_provider(model=AUTO_MODEL):
     """Resolve Auto to the configured provider after validating the choice."""
     model = validate_model_choice(model)
-    return model_registry.DEFAULT_PROVIDER if model == AUTO_MODEL else model
+    if model == AUTO_MODEL:
+        model = "main"
+    return model_registry.MODEL_ROLES.get(model, model)
 
 
 def validate_agent_choice(value) -> AgentChoice:

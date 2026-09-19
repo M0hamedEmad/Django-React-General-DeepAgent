@@ -6,7 +6,7 @@ export function PromptText({ text, command, mentions = [] }: {
   command?: string;
   mentions?: readonly string[];
 }) {
-  const tokens = /(^\/[\w-]+(?=\s|$))|(^|\s)(@[\w-]+)/g;
+  const tokens = /(^\/[\w-]+(?=\s|$))|(^|\s)(@[\w-]+(?:\/[\w-]+)*)/g;
   const selectedMentions = new Set(mentions);
   const parts: ReactNode[] = [];
   let cursor = 0;

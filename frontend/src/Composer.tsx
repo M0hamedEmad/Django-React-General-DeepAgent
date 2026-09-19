@@ -25,7 +25,7 @@ function triggerAt(text: string, caret: number): Trigger | null {
   const before = text.slice(0, caret);
   const slash = /^\/([\w-]*)$/.exec(before);
   if (slash) return { kind: "command", query: slash[1], start: 0, end: caret };
-  const at = /(?:^|\s)@([\w-]*)$/.exec(before);
+  const at = /(?:^|\s)@([\w-]*(?:\/[\w-]*)*)$/.exec(before);
   if (at) return { kind: "mention", query: at[1], start: caret - at[1].length - 1, end: caret };
   return null;
 }
@@ -36,7 +36,7 @@ const matches = (haystack: string, query: string) => fold(haystack).includes(fol
 /** The @names in a message that point at something real, in order, once each. */
 function mentionsIn(text: string, known: Mention[], selected: ReadonlySet<string>): MentionRef[] {
   const found: MentionRef[] = [];
-  const re = /(?:^|\s)@([\w-]+)/g;
+  const re = /(?:^|\s)@([\w-]+(?:\/[\w-]+)*)/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
     const id = m[1];
@@ -268,7 +268,7 @@ export function Composer({ draft, setDraft, onSend, onStop, busy, options, setOp
             setSelectedMentions((current) => {
               const present = new Set(
                 Array.from(
-                  value.matchAll(/(?:^|\s)@([\w-]+)/g),
+                  value.matchAll(/(?:^|\s)@([\w-]+(?:\/[\w-]+)*)/g),
                   (match) => match[1],
                 ),
               );

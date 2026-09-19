@@ -8,10 +8,23 @@ from django.test import RequestFactory, SimpleTestCase
 
 from deep_agent_app import chat
 from deep_agent_app.runtime import RuntimeBusyError, agent_runtime
-from deep_agent_app.views import ChatView, RuntimeView, ai_sdk_frames
+from deep_agent_app.views import AiSdkEventStream, ChatView, RuntimeView, ai_sdk_frames
 
 
 class ChatViewUnitTests(SimpleTestCase):
+    def test_empty_model_response_has_actionable_frontend_message(self):
+        from deep_agent_app.agent.llm.routing import EmptyModelResponseError
+
+        message = AiSdkEventStream._error_text(
+            EmptyModelResponseError("provider returned no content")
+        )
+
+        self.assertEqual(
+            message,
+            "The selected model did not produce an answer after two attempts. "
+            "Please try again or select another model.",
+        )
+
     def test_chat_view_parses_ai_sdk_input_into_one_turn(self):
         request = RequestFactory().post(
             "/api/chat/",

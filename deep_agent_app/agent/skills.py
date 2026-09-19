@@ -21,9 +21,8 @@ from deep_agent_app.utilities.constants import DEEP_AGENT, SKILLS_ROOT
 
 SkillSource = tuple[str, str]
 
-# Deep Agents scans the direct children of every source. The main agent sees
-# every skill so it can route work; the connected worker receives only skills
-# whose workflows require connected company tools.
+# Deep Agents scans the direct children of every source. These are the small,
+# trusted, repository-bundled skills available to the agent.
 GENERAL_SKILL_SOURCES: tuple[SkillSource, ...] = (("/skills/general", "Company"),)
 CONNECTED_SKILL_SOURCES: tuple[SkillSource, ...] = ()
 MAIN_SKILL_SOURCES: tuple[SkillSource, ...] = (
@@ -32,6 +31,15 @@ MAIN_SKILL_SOURCES: tuple[SkillSource, ...] = (
 
 MAX_SKILL_NAME_LENGTH = 64
 MAX_SKILL_DESCRIPTION_LENGTH = 1024
+MAIN_SKILL_TOOL_NAMES = frozenset(
+    {
+        "ask_user",
+        "present_ui",
+        "present_report",
+        "internet_search",
+        "fetch_webpage_content",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +48,7 @@ class SkillMetadata:
     description: str
     virtual_path: str
     requires_connection: bool
+    required_tools: tuple[str, ...]
 
     def as_mention(self):
         return {
@@ -135,7 +144,7 @@ def _valid_skill_name(name: str) -> bool:
     )
 
 
-def _front_matter(path: Path) -> tuple[str, str]:
+def _front_matter(path: Path) -> tuple[str, str, tuple[str, ...]]:
     try:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
@@ -180,7 +189,20 @@ def _front_matter(path: Path) -> tuple[str, str]:
             f"invalid skill metadata in {path}: description exceeds "
             f"{MAX_SKILL_DESCRIPTION_LENGTH} characters"
         )
-    return name, description
+    required_tools = metadata.get("required-tools", [])
+    if not isinstance(required_tools, list) or not all(
+        isinstance(tool, str) for tool in required_tools
+    ):
+        raise ImproperlyConfigured(
+            f"invalid skill metadata in {path}: required-tools must be a list of tool names"
+        )
+    unknown_tools = set(required_tools) - MAIN_SKILL_TOOL_NAMES
+    if unknown_tools:
+        raise ImproperlyConfigured(
+            f"invalid skill metadata in {path}: unavailable tool "
+            f"{sorted(unknown_tools)[0]!r}"
+        )
+    return name, description, tuple(dict.fromkeys(required_tools))
 
 
 @lru_cache(maxsize=8)
@@ -220,7 +242,7 @@ def _load_skill_catalog(
                 raise ImproperlyConfigured(
                     f"skill directory has no SKILL.md: {directory}"
                 )
-            name, description = _front_matter(skill_file)
+            name, description, required_tools = _front_matter(skill_file)
             virtual_path = f"{virtual_root}/{directory.name}/SKILL.md"
             if name in by_name:
                 raise ImproperlyConfigured(
@@ -232,6 +254,7 @@ def _load_skill_catalog(
                 description=description,
                 virtual_path=virtual_path,
                 requires_connection=virtual_root in connected_roots,
+                required_tools=required_tools,
             )
 
     return tuple(sorted(by_name.values(), key=lambda item: item.name))

@@ -10,9 +10,13 @@ from langchain_core._api import LangChainBetaWarning
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 
+from deep_agent_app.agent.budget import ACTIVE_RUN_BUDGET, RunBudget
 from deep_agent_app.agent.context import TurnContext
 from deep_agent_app.runtime import agent_runtime
 from deep_agent_app.utilities.constants import (
+    CONTEXT_COMPACTION,
+    MAX_MODEL_CALLS_PER_TURN,
+    MAX_TOOL_CALLS_PER_TURN,
     RUN_TIMEOUT_SECONDS,
     SSE_HEARTBEAT_SECONDS,
     STREAM_EVENT_BUFFER_SIZE,
@@ -82,17 +86,24 @@ async def run_turn(
         raise ValueError("workspace_id is required for an agent turn")
     command = options.get("command")
     command = command if isinstance(command, dict) else {}
+    run_budget = RunBudget(
+        MAX_MODEL_CALLS_PER_TURN,
+        MAX_TOOL_CALLS_PER_TURN,
+        filter_internal_model_text=CONTEXT_COMPACTION.get("enabled") is True,
+    )
+    selected_mentions = _safe_mentions(options)
     turn_context = TurnContext(
         workspace_id=workspace_id,
         thread_id=thread_id,
         model=options["model"],
         agent=options["agent"],
         tools=tuple(options["tools"]),
-        mentions=_safe_mentions(options),
+        mentions=selected_mentions,
         thinking=options["thinking"],
         plan=options["plan"],
         command_id=command.get("id"),
         command_prompt=command.get("prompt"),
+        run_budget=run_budget,
     )
     selected_provider = resolve_provider(options["model"])
     run_config = graph_config(thread_id, checkpoint_config)
@@ -108,7 +119,6 @@ async def run_turn(
     if resume is not None:
         turn_input = Command(resume=resume)
     else:
-        selected_mentions = _safe_mentions(options)
         message_metadata = {"created_at": datetime.now(timezone.utc).isoformat()}
         if selected_mentions:
             message_metadata["mentions"] = [
@@ -143,11 +153,12 @@ async def run_turn(
         if event["type"] in {"_usage_start", "_usage_end"}:
             call = usage_calls.setdefault(event["id"], {})
             call.update(event)
-            call["provider_id"] = selected_provider
+            call["provider_id"] = event.get("provider_id") or selected_provider
         else:
             await queue.put(event)
 
     async def pump():
+        budget_token = ACTIVE_RUN_BUDGET.set(run_budget)
         try:
             async with asyncio.timeout(RUN_TIMEOUT_SECONDS):
                 async with stream:
@@ -159,6 +170,8 @@ async def run_turn(
             raise
         else:
             await queue.put(_STREAM_END)
+        finally:
+            ACTIVE_RUN_BUDGET.reset(budget_token)
 
     task = asyncio.create_task(pump(), name=f"chat-turn-{turn_id}")
     status = "cancelled"
@@ -218,3 +231,12 @@ async def run_turn(
                 usage["calls"],
                 usage["unreported_calls"],
             )
+        log.info(
+            "thread %s turn %s execution attempts model=%s/%s tool=%s/%s",
+            thread_id,
+            turn_id,
+            run_budget.model_calls,
+            run_budget.max_model_calls,
+            run_budget.tool_calls,
+            run_budget.max_tool_calls,
+        )

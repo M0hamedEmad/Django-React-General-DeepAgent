@@ -13,6 +13,55 @@ from . import clients, reasoning
 
 log = logging.getLogger(__name__)
 
+EMPTY_RESPONSE_RETRY_INSTRUCTION = (
+    "The previous model attempt produced neither user-visible text nor a tool call. "
+    "Complete this turn with a concise answer or an appropriate tool call. "
+    "Do not return an empty message."
+)
+
+
+class EmptyModelResponseError(RuntimeError):
+    """The provider twice returned neither answer text nor a tool call."""
+
+
+def is_empty_model_response(response):
+    """Detect a provider's silent completion without misclassifying tool calls."""
+    if (
+        not isinstance(response, ModelResponse)
+        or response.structured_response is not None
+    ):
+        return False
+    if len(response.result) != 1 or not isinstance(response.result[0], AIMessage):
+        return False
+    message = response.result[0]
+    if message.tool_calls:
+        return False
+    if isinstance(message.content, str):
+        return not message.content.strip()
+    if isinstance(message.content, list):
+        return not any(
+            isinstance(block, dict)
+            and block.get("type") == "text"
+            and str(block.get("text", "")).strip()
+            for block in message.content
+        )
+    return not message.content
+
+
+def empty_response_retry_request(request):
+    system_message = request.system_message
+    if system_message is None:
+        system_message = SystemMessage(content=EMPTY_RESPONSE_RETRY_INSTRUCTION)
+    else:
+        system_message = system_message.model_copy(
+            update={
+                "content": (
+                    f"{system_message.content}\n\n{EMPTY_RESPONSE_RETRY_INSTRUCTION}"
+                )
+            }
+        )
+    return request.override(system_message=system_message)
+
 
 def timestamp_model_response(response):
     if not isinstance(response, ModelResponse):
@@ -91,8 +140,15 @@ async def model_selector(request: ModelRequest[TurnContext], handler):
             **request.model_settings,
             **thinking_settings,
         }
+    dispatched_request = request.override(**overrides)
+
+    async def invoke(candidate):
+        if context and context.run_budget is not None:
+            context.run_budget.consume_model_call()
+        return await handler(candidate)
+
     try:
-        response = await handler(request.override(**overrides))
+        response = await invoke(dispatched_request)
     except Exception as exc:
         if thinking_settings and reasoning.is_unsupported_thinking_error(exc):
             reasoning.REJECTED_THINKING_MODELS.add(thinking_key)
@@ -103,9 +159,26 @@ async def model_selector(request: ModelRequest[TurnContext], handler):
                 effort,
                 exc,
             )
-            response = await handler(
-                request.override(model=model, model_settings=request.model_settings)
+            dispatched_request = request.override(
+                model=model, model_settings=request.model_settings
             )
+            response = await invoke(dispatched_request)
         else:
             raise
+    if is_empty_model_response(response):
+        log.warning(
+            "provider %s model %s returned an empty final response; retrying once",
+            provider_id,
+            model_registry.PROVIDERS[provider_id]["model"],
+        )
+        retry_request = dispatched_request
+        if thinking_settings:
+            retry_request = request.override(
+                model=model, model_settings=request.model_settings
+            )
+        response = await invoke(empty_response_retry_request(retry_request))
+        if is_empty_model_response(response):
+            raise EmptyModelResponseError(
+                "The model returned an empty response twice; please retry the turn."
+            )
     return timestamp_model_response(response)

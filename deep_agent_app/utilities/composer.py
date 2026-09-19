@@ -21,7 +21,7 @@ from .constants import CONFIG_DIR
 CONFIG = CONFIG_DIR
 MENTION_KINDS = ("skill", "agent", "tool")
 SLASH_COMMAND_RE = re.compile(r"^/([\w-]+)(?:\s|$)")
-MENTION_ID_RE = re.compile(r"^[\w-]+$")
+MENTION_ID_RE = re.compile(r"^[\w-]+(?:/[\w-]+)*$")
 
 
 @lru_cache(maxsize=1)

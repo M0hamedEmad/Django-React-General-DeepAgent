@@ -212,6 +212,225 @@ class CompanySkillTests(SimpleTestCase):
         self.assertEqual(len(evals["evals"]), 3)
 
 
+class PhaseZeroDelegationTests(SimpleTestCase):
+    async def test_actual_builder_compiles_with_main_skills(self):
+        from langgraph.checkpoint.memory import InMemorySaver
+
+        from deep_agent_app.agent import agent as builder
+        from deep_agent_app.agent.context import TurnContext
+
+        model = FakeToolModel(responses=[AIMessage(content="ready")])
+        with (
+            patch.object(
+                builder.PersistentMcpTools,
+                "load_registered_tools",
+                AsyncMock(return_value=[]),
+            ),
+            patch.object(builder, "build_llm", return_value=model),
+            patch.object(llm_clients, "build_llm", return_value=model),
+        ):
+            graph = await builder.build_agent(InMemorySaver())
+            result = await graph.ainvoke(
+                {"messages": [HumanMessage(content="Hello")]},
+                {"configurable": {"thread_id": "phase-zero-builder"}},
+                context=TurnContext(
+                    workspace_id="phase-zero-workspace",
+                    thread_id="phase-zero-builder",
+                ),
+            )
+
+        self.assertEqual(result["messages"][-1].content, "ready")
+
+    async def test_bundled_skill_can_read_resources_and_present_report(self):
+        from langchain_core.messages import ToolMessage
+        from langgraph.checkpoint.memory import InMemorySaver
+
+        from deep_agent_app.agent import agent as builder
+        from deep_agent_app.agent.context import TurnContext
+
+        model = FakeToolModel(
+            responses=[
+                tool_call(
+                    "read_file",
+                    {"file_path": "/skills/general/executive-brief/SKILL.md"},
+                    "read-skill",
+                ),
+                tool_call(
+                    "present_report",
+                    {
+                        "title": "Incident brief",
+                        "blocks": [
+                            {"type": "markdown", "content": "Errors rose to 7.8%."}
+                        ],
+                    },
+                    "render-brief",
+                ),
+                AIMessage(content="The brief is ready."),
+            ]
+        )
+        with (
+            patch.object(
+                builder.PersistentMcpTools,
+                "load_registered_tools",
+                AsyncMock(return_value=[]),
+            ),
+            patch.object(builder, "build_llm", return_value=model),
+            patch.object(llm_clients, "build_llm", return_value=model),
+        ):
+            graph = await builder.build_agent(InMemorySaver())
+            result = await graph.ainvoke(
+                {"messages": [HumanMessage(content="@executive-brief make a brief")]},
+                {"configurable": {"thread_id": "phase-zero-skill"}},
+                context=TurnContext(
+                    workspace_id="phase-zero-workspace",
+                    thread_id="phase-zero-skill",
+                    mentions=(("skill", "executive-brief"),),
+                ),
+            )
+
+        tool_messages = [
+            message
+            for message in result["messages"]
+            if isinstance(message, ToolMessage)
+        ]
+        self.assertIn("# Executive Brief", tool_messages[0].content)
+        self.assertIn("Report 'Incident brief' is ready", tool_messages[1].content)
+        self.assertEqual(result["messages"][-1].content, "The brief is ready.")
+
+    async def test_project_planning_skill_can_read_its_reference(self):
+        from langchain_core.messages import ToolMessage
+        from langgraph.checkpoint.memory import InMemorySaver
+
+        from deep_agent_app.agent import agent as builder
+        from deep_agent_app.agent.context import TurnContext
+
+        model = FakeToolModel(
+            responses=[
+                tool_call(
+                    "read_file",
+                    {"file_path": "/skills/general/project-planning/SKILL.md"},
+                    "read-skill",
+                ),
+                tool_call(
+                    "read_file",
+                    {
+                        "file_path": (
+                            "/skills/general/project-planning/references/"
+                            "project-plan-template.md"
+                        )
+                    },
+                    "read-template",
+                ),
+                AIMessage(content="Proposed outline ready."),
+            ]
+        )
+        with (
+            patch.object(
+                builder.PersistentMcpTools,
+                "load_registered_tools",
+                AsyncMock(return_value=[]),
+            ),
+            patch.object(builder, "build_llm", return_value=model),
+            patch.object(llm_clients, "build_llm", return_value=model),
+        ):
+            graph = await builder.build_agent(InMemorySaver())
+            result = await graph.ainvoke(
+                {"messages": [HumanMessage(content="Draft a project outline")]},
+                {"configurable": {"thread_id": "phase-zero-reference"}},
+                context=TurnContext(
+                    workspace_id="phase-zero-workspace",
+                    thread_id="phase-zero-reference",
+                    mentions=(("skill", "project-planning"),),
+                ),
+            )
+
+        tool_messages = [
+            message
+            for message in result["messages"]
+            if isinstance(message, ToolMessage)
+        ]
+        self.assertIn("# Project Planning", tool_messages[0].content)
+        self.assertIn("Objective", tool_messages[1].content)
+        self.assertEqual(result["messages"][-1].content, "Proposed outline ready.")
+
+    async def test_selected_model_and_disabled_web_policy_reach_general_worker(self):
+        from deepagents import create_deep_agent
+        from langgraph.checkpoint.memory import InMemorySaver
+
+        from deep_agent_app.agent.context import TurnContext
+        from deep_agent_app.agent.budget import RunBudget, ToolCallBudgetMiddleware
+        from deep_agent_app.agent.llm.routing import model_selector
+        from deep_agent_app.agent.middleware.selection import TurnSelectionMiddleware
+
+        web_calls = []
+
+        async def internet_search(query: str) -> str:
+            """Search public pages."""
+            web_calls.append(query)
+            return "network result"
+
+        base = FakeToolModel(responses=[AIMessage(content="base model answered")])
+        selected = FakeToolModel(
+            responses=[
+                tool_call(
+                    "task",
+                    {"description": "Look this up", "subagent_type": "general-purpose"},
+                    "main-task",
+                ),
+                tool_call("internet_search", {"query": "private"}, "worker-web"),
+                AIMessage(content="worker done"),
+                AIMessage(content="main done"),
+            ]
+        )
+        fallback = FakeToolModel(responses=[AIMessage(content="fallback")])
+        graph = create_deep_agent(
+            model=base,
+            tools=[],
+            subagents=[
+                {
+                    "name": "general-purpose",
+                    "description": "General worker",
+                    "system_prompt": "Do the delegated work.",
+                    "model": base,
+                    "tools": [internet_search],
+                    "middleware": [
+                        TurnSelectionMiddleware(None),
+                        ToolCallBudgetMiddleware(),
+                        model_selector,
+                    ],
+                }
+            ],
+            middleware=[
+                TurnSelectionMiddleware(None),
+                ToolCallBudgetMiddleware(),
+                model_selector,
+            ],
+            context_schema=TurnContext,
+            checkpointer=InMemorySaver(),
+        )
+
+        budget = RunBudget(8, 8)
+        with patch.object(
+            llm_clients,
+            "build_llm",
+            side_effect=lambda provider, _temperature: (
+                selected if provider == "openai" else fallback
+            ),
+        ):
+            result = await graph.ainvoke(
+                {"messages": [HumanMessage(content="Research this")]},
+                {"configurable": {"thread_id": "phase-zero-delegation"}},
+                context=TurnContext(model="openai", tools=(), run_budget=budget),
+            )
+
+        self.assertEqual(base.i, 0)
+        self.assertEqual(selected.i, 4)
+        self.assertEqual(fallback.i, 0)
+        self.assertEqual(web_calls, [])
+        self.assertEqual(budget.model_calls, 4)
+        self.assertEqual(result["messages"][-1].content, "main done")
+
+
 class SubagentStreamingTests(SimpleTestCase):
     @staticmethod
     async def _channel(subagent):
@@ -751,6 +970,8 @@ class ChatApiTests(ApiTestCase):
         )
 
     async def test_mentions_ride_with_the_options(self):
+        from deep_agent_app.utilities.constants import CONNECTED_SYSTEM_ENABLED
+
         await self.login()
         seen = []
 
@@ -793,7 +1014,12 @@ class ChatApiTests(ApiTestCase):
                     "plan": False,
                     "mentions": [
                         {"kind": "skill", "id": "executive-brief"},
-                    ],
+                    ]
+                    + (
+                        [{"kind": "agent", "id": "connected"}]
+                        if CONNECTED_SYSTEM_ENABLED
+                        else []
+                    ),
                 }
             ],
         )
@@ -1134,6 +1360,8 @@ class ChatApiTests(ApiTestCase):
         self.assertFalse(await Thread.objects.filter(id=thread.id).aexists())
 
     async def test_config(self):
+        from deep_agent_app.utilities.constants import CONNECTED_SYSTEM_ENABLED
+
         await self.login()
         data = json.loads((await self.async_client.get("/api/config/")).content)
         self.assertEqual(data["user"], {"username": "mona"})
@@ -1143,7 +1371,10 @@ class ChatApiTests(ApiTestCase):
             ("auto", {"id": "auto", "label": "Auto"}),
         )
         self.assertIn("ollama", model_ids)
-        self.assertEqual([a["id"] for a in data["agents"]], ["general"])
+        expected_agents = (
+            ["general", "connected"] if CONNECTED_SYSTEM_ENABLED else ["general"]
+        )
+        self.assertEqual([a["id"] for a in data["agents"]], expected_agents)
         self.assertIn("web_search", [t["id"] for t in data["tools"]])
         self.assertNotIn("connected", [t["id"] for t in data["tools"]])
         # Slash commands come from data/commands.json …
@@ -1155,7 +1386,9 @@ class ChatApiTests(ApiTestCase):
         by_kind = {}
         for m in data["mentions"]:
             by_kind.setdefault(m["kind"], []).append(m["id"])
-        self.assertNotIn("agent", by_kind)
+        self.assertEqual(
+            by_kind.get("agent", []), ["connected"] if CONNECTED_SYSTEM_ENABLED else []
+        )
         self.assertIn("internet_search", by_kind["tool"])
         self.assertIn("executive-brief", by_kind["skill"])
         brief = next(m for m in data["mentions"] if m["id"] == "executive-brief")
@@ -2360,7 +2593,11 @@ class ModelSelectionTests(TestCase):
         data = json.loads(response.content)
         self.assertEqual(data["default_model"], "auto")
         self.assertEqual(data["models"][0], {"id": "auto", "label": "Auto"})
-        self.assertEqual([item["id"] for item in data["models"][1:]], list(PROVIDERS))
+        self.assertEqual(
+            [item["id"] for item in data["models"][1:4]],
+            ["flash", "main", "frontier"],
+        )
+        self.assertEqual([item["id"] for item in data["models"][4:]], list(PROVIDERS))
 
     async def test_chat_api_rejects_unknown_model_before_database_work(self):
         from django.test import RequestFactory
@@ -2703,10 +2940,150 @@ class ModelSelectionTests(TestCase):
 
         self.assertEqual(seen, [{"reasoning_effort": "medium"}, {}, {}])
 
+    async def test_empty_provider_completion_retries_once_with_visible_answer_instruction(
+        self,
+    ):
+        from types import MappingProxyType
+
+        from langchain.agents.middleware import ModelRequest, ModelResponse
+        from langgraph.runtime import Runtime
+
+        from deep_agent_app.agent.context import TurnContext
+        from deep_agent_app.agent.llm.routing import model_selector
+
+        model = FakeToolModel(responses=[AIMessage(content="unused")])
+        providers = MappingProxyType(
+            {"custom": MappingProxyType({"model": "model-a", "api_key": "test-key"})}
+        )
+        seen = []
+
+        async def handler(request):
+            seen.append(
+                request.system_message.content if request.system_message else ""
+            )
+            return ModelResponse(
+                result=[
+                    AIMessage(content="" if len(seen) == 1 else "The plan is ready.")
+                ]
+            )
+
+        request = ModelRequest(
+            model=model,
+            messages=[],
+            runtime=Runtime(context=TurnContext(model="custom")),
+        )
+        with (
+            patch.object(model_registry, "PROVIDERS", providers),
+            patch.object(llm_clients, "_build_llm", return_value=model),
+            self.assertLogs("deep_agent_app.agent.llm.routing", level="WARNING"),
+        ):
+            response = await model_selector.awrap_model_call(request, handler)
+
+        self.assertEqual(response.result[0].content, "The plan is ready.")
+        self.assertEqual(len(seen), 2)
+        self.assertIn("Do not return an empty message", seen[1])
+
+    async def test_two_empty_provider_completions_raise_instead_of_ending_silently(
+        self,
+    ):
+        from types import MappingProxyType
+
+        from langchain.agents.middleware import ModelRequest, ModelResponse
+        from langgraph.runtime import Runtime
+
+        from deep_agent_app.agent.context import TurnContext
+        from deep_agent_app.agent.llm.routing import model_selector
+
+        model = FakeToolModel(responses=[AIMessage(content="unused")])
+        providers = MappingProxyType(
+            {"custom": MappingProxyType({"model": "model-a", "api_key": "test-key"})}
+        )
+        calls = []
+
+        async def handler(request):
+            calls.append(request)
+            return ModelResponse(result=[AIMessage(content="")])
+
+        request = ModelRequest(
+            model=model,
+            messages=[],
+            runtime=Runtime(context=TurnContext(model="custom")),
+        )
+        with (
+            patch.object(model_registry, "PROVIDERS", providers),
+            patch.object(llm_clients, "_build_llm", return_value=model),
+            self.assertLogs("deep_agent_app.agent.llm.routing", level="WARNING"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "empty response twice"):
+                await model_selector.awrap_model_call(request, handler)
+        self.assertEqual(len(calls), 2)
+
+    async def test_empty_completion_retry_removes_optional_thinking_setting(self):
+        from types import MappingProxyType
+
+        from langchain.agents.middleware import ModelRequest, ModelResponse
+        from langgraph.runtime import Runtime
+
+        from deep_agent_app.agent.context import TurnContext
+        from deep_agent_app.agent.llm.routing import model_selector
+
+        model = FakeToolModel(responses=[AIMessage(content="unused")])
+        providers = MappingProxyType(
+            {
+                "ollama": MappingProxyType(
+                    {
+                        "model": "model-a",
+                        "api_key": "test-key",
+                        "base_url": "https://ollama.com/v1",
+                        "thinking": True,
+                    }
+                )
+            }
+        )
+        settings = []
+
+        async def handler(request):
+            settings.append(request.model_settings)
+            return ModelResponse(
+                result=[AIMessage(content="" if len(settings) == 1 else "Recovered")]
+            )
+
+        request = ModelRequest(
+            model=model,
+            messages=[],
+            runtime=Runtime(context=TurnContext(model="ollama", thinking="instant")),
+        )
+        reasoning_module.thinking_model_settings.cache_clear()
+        try:
+            with (
+                patch.object(model_registry, "PROVIDERS", providers),
+                patch.object(llm_clients, "_build_llm", return_value=model),
+                self.assertLogs("deep_agent_app.agent.llm.routing", level="WARNING"),
+            ):
+                response = await model_selector.awrap_model_call(request, handler)
+        finally:
+            reasoning_module.thinking_model_settings.cache_clear()
+
+        self.assertEqual(response.result[0].content, "Recovered")
+        self.assertEqual(settings, [{"reasoning_effort": "none"}, {}])
+
+    async def test_tool_call_with_empty_text_is_not_retried(self):
+        from langchain.agents.middleware import ModelResponse
+
+        from deep_agent_app.agent.llm.routing import is_empty_model_response
+
+        response = ModelResponse(
+            result=[
+                tool_call("read_file", {"file_path": "/skills/x/SKILL.md"}, "call-1")
+            ]
+        )
+        self.assertFalse(is_empty_model_response(response))
+
     async def test_run_turn_passes_model_as_langgraph_context(self):
         from types import MappingProxyType, SimpleNamespace
 
         from deep_agent_app.agent import TurnContext
+        from deep_agent_app.agent.budget import RunBudget
 
         class EmptyChannel:
             def __aiter__(self):
@@ -2770,8 +3147,10 @@ class ModelSelectionTests(TestCase):
 
         self.assertEqual(events, [])
         self.assertEqual(fake.call[1]["configurable"]["ui_options"]["model"], "custom")
+        context = fake.call[2]["context"]
+        self.assertIsInstance(context.run_budget, RunBudget)
         self.assertEqual(
-            fake.call[2]["context"],
+            context,
             TurnContext(
                 workspace_id="workspace-1",
                 thread_id="ctx",
@@ -2780,6 +3159,7 @@ class ModelSelectionTests(TestCase):
                 plan=True,
                 command_id="report",
                 command_prompt="Use present_report to create a workspace report.",
+                run_budget=context.run_budget,
             ),
         )
         self.assertEqual(fake.call[2]["version"], "v3")

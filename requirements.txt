@@ -11,7 +11,7 @@ uvicorn==0.35.0
 # StreamApiContractTests fails loudly if a dependency bump moves the API.
 deepagents==0.7.9
 langgraph==1.2.11
-langchain-core==1.6.0
+langchain-core==1.6.1
 langchain-openai==1.6.0
 # Native Gemini support for llm.providers.*.model_provider = "google_genai".
 langchain-google-genai==4.3.7

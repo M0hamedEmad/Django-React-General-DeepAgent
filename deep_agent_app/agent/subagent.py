@@ -9,7 +9,9 @@ from langchain_core.tools import BaseTool
 
 from deep_agent_app.utilities.constants import CONNECTED_SYSTEM_ENABLED
 
+from .backend import WorkspaceContextMiddleware
 from .llm.routing import model_selector
+from .budget import ToolCallBudgetMiddleware
 from .middleware.ask_user_recovery import recover_ask_user_markup
 from .prompts import SUBAGENT_PROMPT
 from .skills import SkillSource, connected_skill_sources
@@ -63,7 +65,12 @@ def get_subagents(
         system_prompt=SUBAGENT_PROMPT,
         model=model,
         tools=[*mcp_tools, ask_user],
-        middleware=[recover_ask_user_markup, model_selector],
+        middleware=[
+            WorkspaceContextMiddleware(),
+            ToolCallBudgetMiddleware(),
+            recover_ask_user_markup,
+            model_selector,
+        ],
         skills=connected_skill_sources(),
     )
     return [company_subagent]

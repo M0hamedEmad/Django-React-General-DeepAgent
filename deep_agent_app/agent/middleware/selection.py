@@ -3,7 +3,7 @@
 from collections.abc import Mapping
 
 from langchain.agents.middleware import AgentMiddleware
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import SystemMessage, ToolMessage
 
 from deep_agent_app.utilities.composer import mention_prompts
 
@@ -41,9 +41,21 @@ class TurnSelectionMiddleware(AgentMiddleware):
             "present_report",
         }
     )
+    WEB_TOOL_NAMES = frozenset({"internet_search", "fetch_webpage_content"})
 
-    def __init__(self, connected_subagent_name: str):
+    def __init__(self, connected_subagent_name: str | None):
         self.connected_subagent_name = connected_subagent_name
+
+    @staticmethod
+    def web_search_enabled(context):
+        if context is None:
+            return True
+        mentioned_tools = {
+            item_id for kind, item_id in context.mentions if kind == "tool"
+        }
+        return "web_search" in context.tools or bool(
+            mentioned_tools & TurnSelectionMiddleware.WEB_TOOL_NAMES
+        )
 
     def prepare(self, request):
         context = request.runtime.context if request.runtime else None
@@ -66,21 +78,20 @@ class TurnSelectionMiddleware(AgentMiddleware):
             or bool(mentioned_tools - self.MAIN_TOOL_NAMES)
             or any(skill.requires_connection for skill in selected_skills)
         )
-        web_search_enabled = (
-            "web_search" in context.tools or "internet_search" in mentioned_tools
-        )
+        web_search_enabled = self.web_search_enabled(context)
         tools = []
         for tool in request.tools:
             name = tool_name(tool)
-            if (
-                name in ("internet_search", "fetch_webpage_content")
-                and not web_search_enabled
-            ):
+            if name in self.WEB_TOOL_NAMES and not web_search_enabled:
                 continue
             tools.append(tool)
 
         instructions = mention_prompts(context.mentions)
-        if delegation_requested and not mentioned_agent:
+        if (
+            self.connected_subagent_name
+            and delegation_requested
+            and not mentioned_agent
+        ):
             instructions.append(
                 "The user selected the current company-system capability for this turn. "
                 "Delegate the connected-system work to the "
@@ -101,3 +112,23 @@ class TurnSelectionMiddleware(AgentMiddleware):
 
     async def awrap_model_call(self, request, handler):
         return await handler(self.prepare(request))
+
+    def _blocked_tool_message(self, request):
+        context = request.runtime.context if request.runtime else None
+        name = request.tool_call["name"]
+        if name in self.WEB_TOOL_NAMES and not self.web_search_enabled(context):
+            return ToolMessage(
+                content="Web search is disabled for this turn.",
+                name=name,
+                tool_call_id=request.tool_call["id"],
+                status="error",
+            )
+        return None
+
+    def wrap_tool_call(self, request, handler):
+        blocked = self._blocked_tool_message(request)
+        return blocked if blocked is not None else handler(request)
+
+    async def awrap_tool_call(self, request, handler):
+        blocked = self._blocked_tool_message(request)
+        return blocked if blocked is not None else await handler(request)

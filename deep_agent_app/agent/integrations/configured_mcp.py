@@ -8,11 +8,17 @@ from .persistent_mcp_tools import PersistentMcpTools
 
 
 def configured_mcp_servers():
-    """Create each enabled server once when the integration package loads."""
+    """Create process-shared integrations using service-scoped credentials only."""
     integrations = []
     for server_name, config in MCP_SERVERS.items():
         if not config.get("enabled", False):
             continue
+
+        if config.get("credential_scope", "service") != "service":
+            raise ImproperlyConfigured(
+                f"MCP server {server_name!r} requires service-scoped credentials "
+                "in this process-shared runtime"
+            )
 
         url = config.get("url")
         if not isinstance(url, str) or not url.strip():

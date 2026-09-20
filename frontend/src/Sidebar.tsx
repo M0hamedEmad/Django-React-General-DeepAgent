@@ -1,7 +1,7 @@
-import { CheckCircle2, CircleAlert, LayoutDashboard, Loader2, LogOut, MessageSquarePlus, PanelLeft, RefreshCw, Sparkles, Trash2, X } from "lucide-react";
+import { CheckCircle2, CircleAlert, File, LayoutDashboard, Loader2, LogOut, MessageSquarePlus, PanelLeft, RefreshCw, Sparkles, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { csrf } from "./api";
-import type { IntegrationStatus, Presentation, ThreadInfo } from "./types";
+import type { IntegrationStatus, ThreadInfo, WorkspaceItem } from "./types";
 
 export function Sidebar({ open, onToggle, threads, currentId, onOpen, onNew, onDelete, presentations, onOpenPresentation, username, integrations, canReload, reloading, onReload }: {
   open: boolean;
@@ -11,8 +11,8 @@ export function Sidebar({ open, onToggle, threads, currentId, onOpen, onNew, onD
   onOpen: (id: string) => void;
   onNew: () => void;
   onDelete: (id: string) => void;
-  presentations: Presentation[];
-  onOpenPresentation: (presentation: Presentation) => void;
+  presentations: WorkspaceItem[];
+  onOpenPresentation: (presentation: WorkspaceItem) => void;
   username: string;
   integrations: IntegrationStatus[];
   canReload: boolean;
@@ -105,7 +105,9 @@ export function Sidebar({ open, onToggle, threads, currentId, onOpen, onNew, onD
                 onClick={() => onOpenPresentation(presentation)}
                 className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-gray-200/50"
               >
-                <LayoutDashboard size={15} className="shrink-0 text-emerald-600" />
+                {presentation.kind === "file"
+                  ? <File size={15} className="shrink-0 text-emerald-600" />
+                  : <LayoutDashboard size={15} className="shrink-0 text-emerald-600" />}
                 <span className="truncate">{presentation.title}</span>
               </button>
             ))}

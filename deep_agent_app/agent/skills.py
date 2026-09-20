@@ -8,7 +8,6 @@ import re
 
 import yaml
 from deepagents.backends.composite import CompositeBackend
-from deepagents.backends.local_shell import LocalShellBackend
 from django.core.exceptions import ImproperlyConfigured
 
 from deep_agent_app.agent.backend import (
@@ -16,6 +15,7 @@ from deep_agent_app.agent.backend import (
     BubblewrapBackend,
     ReadOnlyFilesystemBackend,
     ReadOnlyScopedFilesystemBackend,
+    ScopedLocalShellBackend,
 )
 from deep_agent_app.utilities.constants import DEEP_AGENT, SKILLS_ROOT
 
@@ -34,6 +34,7 @@ MAX_SKILL_DESCRIPTION_LENGTH = 1024
 MAIN_SKILL_TOOL_NAMES = frozenset(
     {
         "ask_user",
+        "present_file",
         "present_ui",
         "present_report",
         "internet_search",
@@ -73,8 +74,8 @@ def build_agent_backend() -> CompositeBackend:
     """Mount the current workspace, shared skills, and same-user workspaces."""
     sandbox = DEEP_AGENT.get("sandbox", "bubblewrap")
     if sandbox == "local_shell":
-        default_backend = LocalShellBackend(
-            root_dir=AGENT_WORKSPACE_ROOT,
+        default_backend = ScopedLocalShellBackend(
+            workspace_root=AGENT_WORKSPACE_ROOT,
             inherit_env=True,
         )
     elif sandbox == "bubblewrap":

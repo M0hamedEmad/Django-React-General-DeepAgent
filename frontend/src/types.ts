@@ -78,6 +78,7 @@ export type PresentationBlock =
   | { type: "link"; url: string; label?: string };
 
 export type Presentation = {
+  kind: "presentation";
   id: string;
   title: string;
   subtitle?: string;
@@ -85,6 +86,16 @@ export type Presentation = {
   blocks: unknown[];
   error?: string;
 };
+
+export type FileArtifact = {
+  kind: "file";
+  id: string;
+  threadId: string;
+  path: string;
+  title: string;
+};
+
+export type WorkspaceItem = Presentation | FileArtifact;
 
 /** Compatibility names for code and checkpoints created before present_ui. */
 export type Block = PresentationBlock;

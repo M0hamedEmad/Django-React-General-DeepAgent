@@ -21,6 +21,7 @@ from .prompts import GENERAL_AGENT_PROMPT, GENERAL_SUBAGENT_PROMPT
 from .skills import build_agent_backend, main_skill_sources, skill_catalog
 from .subagent import CONNECTED_SUBAGENT_NAME, build_subagent, get_subagents
 from .tools.ask_user import ask_user
+from .tools.files import present_file
 from .tools.present_ui import present_ui
 from .tools.reports import present_report
 from .tools.search import internet_search, fetch_webpage_content
@@ -61,6 +62,7 @@ async def build_agent(checkpointer):
         internet_search,
         fetch_webpage_content,
         ask_user,
+        present_file,
         present_ui,
         present_report,
     ]

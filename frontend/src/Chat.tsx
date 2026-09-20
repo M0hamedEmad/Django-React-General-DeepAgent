@@ -3,12 +3,13 @@ import { DefaultChatTransport } from "ai";
 import { AlertCircle, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, csrf } from "./api";
+import { artifactFromToolPart } from "./artifacts/artifactData";
 import { Composer } from "./Composer";
 import { reportFromToolPart } from "./generative-ui/presentationData";
 import { MessageView } from "./Message";
 import { Safe } from "./Safe";
 import { Suggestions } from "./Suggestions";
-import type { ChatMessage, Config, MentionRef, Options, Part, Presentation } from "./types";
+import type { ChatMessage, Config, MentionRef, Options, Part, WorkspaceItem } from "./types";
 
 export function Chat({ threadId, initial, options, setOptions, config, onOpenPresentation, onPresentations, onTurnStart, onTurnEnd }: {
   threadId: string;
@@ -16,8 +17,8 @@ export function Chat({ threadId, initial, options, setOptions, config, onOpenPre
   options: Options;
   setOptions: (options: Options) => void;
   config: Config;
-  onOpenPresentation: (presentation: Presentation) => void;
-  onPresentations: (presentations: Presentation[]) => void;
+  onOpenPresentation: (presentation: WorkspaceItem) => void;
+  onPresentations: (presentations: WorkspaceItem[]) => void;
   onTurnStart: () => void;
   onTurnEnd: () => void;
 }) {
@@ -110,10 +111,10 @@ export function Chat({ threadId, initial, options, setOptions, config, onOpenPre
   // streamed token. A state update scheduled from an effect on every commit
   // counts as a "nested update" in React, and a long, fast stream (an MCP
   // turn with thinking) reaches its limit of 50: React error #185.
-  const presented = useRef("");
+  const presented = useRef<string | null>(null);
   const seen = useRef<Set<string> | null>(null);
   useEffect(() => {
-    const reports = collectReports(messages);
+    const reports = collectWorkspaceItems(messages, threadId);
     const key = reports.map((item) => item.id).join(",");
     if (key === presented.current) return;
     presented.current = key;
@@ -204,6 +205,7 @@ export function Chat({ threadId, initial, options, setOptions, config, onOpenPre
                 <Safe key={m.id} label="This message">
                   <MessageView
                     message={m}
+                    threadId={threadId}
                     now={now}
                     isLast={i === messages.length - 1}
                     streaming={busy}
@@ -343,12 +345,14 @@ function followingAssistantId(messages: ChatMessage[], after: number): string | 
   return undefined;
 }
 
-function collectReports(messages: ChatMessage[]): Presentation[] {
-  const reports: Presentation[] = [];
+export function collectWorkspaceItems(messages: ChatMessage[], threadId: string): WorkspaceItem[] {
+  const reports: WorkspaceItem[] = [];
   for (const m of messages) {
     for (const p of m.parts as Part[]) {
       const report = reportFromToolPart(p);
       if (report) reports.push(report);
+      const artifact = artifactFromToolPart(p, threadId);
+      if (artifact) reports.push(artifact);
     }
   }
   return reports;

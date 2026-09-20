@@ -37,6 +37,7 @@ class TurnSelectionMiddleware(AgentMiddleware):
             "internet_search",
             "fetch_webpage_content",
             "ask_user",
+            "present_file",
             "present_ui",
             "present_report",
         }

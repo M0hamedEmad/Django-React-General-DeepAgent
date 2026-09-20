@@ -316,6 +316,23 @@ class AgentPackageTests(SimpleTestCase):
             ):
                 skills.skill_catalog((("/skills/general", "Company"),))
 
+    def test_skill_catalog_accepts_present_file_dependency(self):
+        from deep_agent_app.agent import skills
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            skill_dir = root / "general" / "file-delivery"
+            skill_dir.mkdir(parents=True)
+            (skill_dir / "SKILL.md").write_text(
+                "---\nname: file-delivery\ndescription: Deliver a file.\n"
+                "required-tools: [present_file]\n---\n",
+                encoding="utf-8",
+            )
+            with patch.object(skills, "SKILLS_ROOT", root):
+                catalog = skills.skill_catalog((("/skills/general", "Company"),))
+
+        self.assertEqual(catalog[0].required_tools, ("present_file",))
+
     def test_app_and_deep_agents_discover_the_same_skills(self):
         from deepagents.middleware.skills import SkillsMiddleware
 
@@ -401,6 +418,7 @@ class AgentPackageTests(SimpleTestCase):
                 "internet_search",
                 "fetch_webpage_content",
                 "ask_user",
+                "present_file",
                 "present_ui",
                 "present_report",
             ],

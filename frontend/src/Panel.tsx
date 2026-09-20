@@ -116,14 +116,15 @@ export function Panel({ title, icon, actions, children, onClose }: PanelProps) {
   );
 }
 
-export function PanelButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
+export function PanelButton({ label, onClick, children, pressed = false }: { label: string; onClick: () => void; children: ReactNode; pressed?: boolean }) {
   return (
     <button
       type="button"
       onClick={onClick}
       title={label}
       aria-label={label}
-      className="flex h-8 w-8 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30"
+      aria-pressed={pressed}
+      className={`flex h-8 w-8 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30 ${pressed ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100" : "text-gray-500 hover:bg-gray-100 hover:text-gray-800"}`}
     >
       {children}
     </button>

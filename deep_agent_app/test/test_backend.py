@@ -20,12 +20,14 @@ from deep_agent_app.agent.backend import (
     ReadOnlyFilesystemBackend,
     ReadOnlyScopedFilesystemBackend,
     ScopedFilesystemBackend,
+    ScopedLocalShellBackend,
     WorkspaceLayout,
     WorkspaceContextMiddleware,
     WorkspaceScope,
     bind_workspace,
     current_workspace_scope,
     migrate_legacy_user_workspace,
+    resolve_conversation_file,
 )
 
 
@@ -208,6 +210,71 @@ class WorkspaceBackendTests(SimpleTestCase):
             migrated = root / "workspace-uuid" / "chat-a" / "note.txt"
             self.assertEqual(migrated.read_text(encoding="utf-8"), "preserved")
             self.assertFalse((root / "7").exists())
+
+    def test_presented_file_resolution_is_scoped_and_rejects_unsafe_paths(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory) / "workspaces"
+            own = root / "workspace-1" / "thread-1"
+            sibling = root / "workspace-1" / "thread-2"
+            own.mkdir(parents=True)
+            sibling.mkdir(parents=True)
+            report = own / "report.pdf"
+            report.write_bytes(b"report")
+            (sibling / "report.pdf").write_bytes(b"sibling")
+            (own / ".secret").write_text("hidden", encoding="utf-8")
+            (own / "folder").mkdir()
+            (own / "linked.pdf").symlink_to(sibling / "report.pdf")
+
+            resolved = resolve_conversation_file(
+                "workspace-1",
+                "thread-1",
+                "/report.pdf",
+                workspace_root=root,
+            )
+
+            self.assertEqual(resolved, report)
+            for unsafe in (
+                "/",
+                "/../thread-2/report.pdf",
+                "/.secret",
+                "/folder",
+                "/linked.pdf",
+                "/missing.pdf",
+            ):
+                with (
+                    self.subTest(path=unsafe),
+                    self.assertRaises((FileNotFoundError, ValueError)),
+                ):
+                    resolve_conversation_file(
+                        "workspace-1",
+                        "thread-1",
+                        unsafe,
+                        workspace_root=root,
+                    )
+
+    def test_local_shell_executes_python_inside_the_active_conversation(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory) / "workspaces"
+            backend = ScopedLocalShellBackend(root, inherit_env=False)
+
+            with bind_workspace("workspace-1", "thread-1"):
+                result = backend.execute(
+                    'python3 -c "from pathlib import Path; '
+                    "Path('created.txt').write_text('first')\""
+                )
+            with bind_workspace("workspace-1", "thread-2"):
+                second = backend.execute("printf second > created.txt")
+
+            self.assertEqual(result.exit_code, 0, result.output)
+            self.assertEqual(second.exit_code, 0, second.output)
+            self.assertEqual(
+                (root / "workspace-1" / "thread-1" / "created.txt").read_text(),
+                "first",
+            )
+            self.assertEqual(
+                (root / "workspace-1" / "thread-2" / "created.txt").read_text(),
+                "second",
+            )
 
 
 class BubblewrapBackendTests(SimpleTestCase):

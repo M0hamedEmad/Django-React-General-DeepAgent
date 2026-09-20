@@ -105,7 +105,7 @@ class ToolCallBudgetMiddleware(AgentMiddleware):
         if budget is None or not isinstance(result, ToolMessage):
             return
         name = request.tool_call["name"]
-        if name not in {"present_report", "present_ui"}:
+        if name not in {"present_file", "present_report", "present_ui"}:
             return
         if isinstance(result.content, str) and result.content.startswith(
             f"Invalid {name} "

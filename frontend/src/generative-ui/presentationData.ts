@@ -69,6 +69,7 @@ export function generativeUiFromToolPart(part: Part): GenerativeUi | null {
   }
 
   const report: Presentation = {
+    kind: "presentation",
     id,
     title: generativeUiTitle(part),
     blocks,

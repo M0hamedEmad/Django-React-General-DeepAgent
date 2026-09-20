@@ -23,6 +23,11 @@ urlpatterns = [
         name="thread-messages",
     ),
     path(
+        "api/threads/<str:thread_id>/files/<path:file_path>",
+        views.ThreadFileView.as_view(),
+        name="thread-file",
+    ),
+    path(
         "api/threads/<str:thread_id>/messages/<str:message_id>/",
         views.ThreadMessageView.as_view(),
         name="thread-message",

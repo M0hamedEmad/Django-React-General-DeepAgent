@@ -68,6 +68,26 @@ class RunBudgetTests(SimpleTestCase):
             await middleware.awrap_tool_call(request, handler)
         self.assertEqual(budget.tool_calls, PRESENTATION_VALIDATION_LIMIT)
 
+    async def test_file_validation_failures_use_the_presentation_limit(self):
+        budget = RunBudget(8, 8)
+        request = SimpleNamespace(
+            runtime=Runtime(context=TurnContext(run_budget=budget)),
+            tool_call={"name": "present_file"},
+        )
+        middleware = ToolCallBudgetMiddleware()
+
+        async def handler(_request):
+            return ToolMessage(
+                content="Invalid present_file path: the file does not exist.",
+                tool_call_id="bad-file",
+            )
+
+        for _ in range(PRESENTATION_VALIDATION_LIMIT - 1):
+            await middleware.awrap_tool_call(request, handler)
+        with self.assertRaisesRegex(RunBudgetExceeded, "present_file validation"):
+            await middleware.awrap_tool_call(request, handler)
+        self.assertEqual(budget.tool_calls, PRESENTATION_VALIDATION_LIMIT)
+
     async def test_empty_response_retry_consumes_another_model_attempt(self):
         model = FakeListChatModel(responses=["unused"])
         budget = RunBudget(1, 2)

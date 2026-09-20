@@ -103,7 +103,7 @@ Skills live under `agent_skills/general/`. Slash commands and mentions are
 configured in `deep_agent_app/config/commands.json` and `mentions.json`.
 Production environment variables are documented in [`.env.example`](.env.example).
 
-When changing the React frontend, use Node.js 22+ and rebuild the committed
+When changing the React frontend, use Node.js 22.18+ and rebuild the committed
 static files:
 
 ```bash

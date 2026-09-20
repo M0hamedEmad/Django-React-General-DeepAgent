@@ -19,13 +19,16 @@ from django.contrib.staticfiles import finders
 from django.core.exceptions import ImproperlyConfigured
 from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import render
+from django.utils.http import content_disposition_header
 from django.views import View
 from django.views.decorators.csrf import ensure_csrf_cookie
 
 from deep_agent_app import chat
+from deep_agent_app.artifacts import artifact_metadata, stream_file
 from deep_agent_app.agent.backend import (
     delete_conversation_workspace,
     migrate_legacy_user_workspace,
+    resolve_conversation_file,
 )
 from deep_agent_app.models import Thread, UserWorkspace
 from deep_agent_app.runtime import (
@@ -743,6 +746,88 @@ class ThreadMessagesView(OwnedThreadView):
             return error
         messages = await chat.get_history(thread_id)
         return JsonResponse({"thread": thread.as_dict(), "messages": messages})
+
+
+class ThreadFileView(OwnedThreadView):
+    """Preview or download one file from an owned conversation workspace."""
+
+    async def head(self, request, thread_id, file_path):
+        return await self._file_response(request, thread_id, file_path, head=True)
+
+    async def get(self, request, thread_id, file_path):
+        return await self._file_response(request, thread_id, file_path, head=False)
+
+    async def _file_response(self, request, thread_id, file_path, *, head):
+        _thread, error = await self.owned_thread_or_error(request, thread_id)
+        if error:
+            return error
+        workspace = await UserWorkspace.objects.filter(user=request.user).afirst()
+        if workspace is None:
+            return self.error("not found", status=404)
+
+        try:
+            path = await asyncio.to_thread(
+                resolve_conversation_file,
+                workspace.id.hex,
+                thread_id,
+                f"/{file_path}",
+            )
+            metadata = await asyncio.to_thread(artifact_metadata, path)
+        except (FileNotFoundError, ValueError, OSError):
+            return self.error("not found", status=404)
+
+        download = request.GET.get("download") == "1"
+        if not download and not metadata.preview_allowed and not head:
+            return self.error(metadata.preview_reason, status=415)
+
+        response = (
+            HttpResponse(status=200, content_type=metadata.content_type)
+            if head
+            else StreamingHttpResponse(
+                stream_file(path),
+                content_type=metadata.content_type,
+            )
+        )
+        response["Content-Length"] = str(metadata.size)
+        response["Content-Disposition"] = content_disposition_header(
+            download,
+            metadata.name,
+        )
+        response["Cache-Control"] = "private, no-store"
+        response["X-Content-Type-Options"] = "nosniff"
+        response["Cross-Origin-Resource-Policy"] = "same-origin"
+        response["Referrer-Policy"] = "no-referrer"
+        response["X-Artifact-Preview"] = (
+            "available" if metadata.preview_allowed else "unavailable"
+        )
+        if metadata.preview_reason:
+            response["X-Artifact-Preview-Reason"] = metadata.preview_reason
+
+        if metadata.suffix in {".html", ".htm"} and not download:
+            response["X-Frame-Options"] = "SAMEORIGIN"
+            response["Content-Security-Policy"] = "; ".join(
+                [
+                    "sandbox allow-scripts",
+                    "default-src 'none'",
+                    "script-src 'unsafe-inline' blob: "
+                    "https://cdn.tailwindcss.com https://cdn.jsdelivr.net",
+                    "style-src 'unsafe-inline' https://fonts.googleapis.com "
+                    "https://cdn.jsdelivr.net",
+                    "img-src data: blob:",
+                    "font-src data: https://fonts.gstatic.com",
+                    "connect-src 'none'",
+                    "object-src 'none'",
+                    "base-uri 'none'",
+                    "form-action 'none'",
+                    "frame-ancestors 'self'",
+                ]
+            )
+        elif metadata.suffix == ".svg" and not download:
+            response["Content-Security-Policy"] = (
+                "sandbox; default-src 'none'; style-src 'unsafe-inline'; "
+                "img-src data: blob:"
+            )
+        return response
 
 
 class ThreadMessageView(OwnedThreadView):

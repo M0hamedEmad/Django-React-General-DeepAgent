@@ -1,11 +1,91 @@
 {
+  "_browser-BSveItSQ.js": {
+    "file": "assets/browser-BSveItSQ.js",
+    "name": "browser"
+  },
+  "_dist-DxDBrgFm.js": {
+    "file": "assets/dist-DxDBrgFm.js",
+    "name": "dist",
+    "imports": [
+      "_rolldown-runtime-Dd_uD5pT.js",
+      "_browser-BSveItSQ.js"
+    ]
+  },
+  "_rolldown-runtime-Dd_uD5pT.js": {
+    "file": "assets/rolldown-runtime-Dd_uD5pT.js",
+    "name": "rolldown-runtime"
+  },
+  "node_modules/@office-kit/pptx-preview/dist/index.js": {
+    "file": "assets/dist-zNVlgMTI.js",
+    "name": "dist",
+    "src": "node_modules/@office-kit/pptx-preview/dist/index.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "_dist-DxDBrgFm.js"
+    ]
+  },
+  "node_modules/docx-preview/dist/docx-preview.mjs": {
+    "file": "assets/docx-preview-BjVP6Rz6.js",
+    "name": "docx-preview",
+    "src": "node_modules/docx-preview/dist/docx-preview.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime-Dd_uD5pT.js"
+    ]
+  },
+  "node_modules/papaparse/papaparse.min.js": {
+    "file": "assets/papaparse.min-BnlZcRhC.js",
+    "name": "papaparse.min",
+    "src": "node_modules/papaparse/papaparse.min.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime-Dd_uD5pT.js"
+    ]
+  },
+  "node_modules/pdfjs-dist/build/pdf.worker.min.mjs": {
+    "file": "index-qwK7q_zL.mjs",
+    "src": "node_modules/pdfjs-dist/build/pdf.worker.min.mjs"
+  },
+  "node_modules/react-pdf/dist/index.js": {
+    "file": "assets/dist-B-6KIlAK.js",
+    "name": "dist",
+    "src": "node_modules/react-pdf/dist/index.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime-Dd_uD5pT.js",
+      "src/main.tsx"
+    ]
+  },
+  "node_modules/read-excel-file/browser/index.js": {
+    "file": "assets/browser-oMziE8it.js",
+    "name": "browser",
+    "src": "node_modules/read-excel-file/browser/index.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "_browser-BSveItSQ.js"
+    ]
+  },
   "src/main.tsx": {
-    "file": "index-jkSbpF6j.js",
+    "file": "index-B5TG8MRT.js",
     "name": "main",
     "src": "src/main.tsx",
     "isEntry": true,
+    "imports": [
+      "_rolldown-runtime-Dd_uD5pT.js"
+    ],
+    "dynamicImports": [
+      "node_modules/papaparse/papaparse.min.js",
+      "node_modules/read-excel-file/browser/index.js",
+      "node_modules/docx-preview/dist/docx-preview.mjs",
+      "node_modules/react-pdf/dist/index.js",
+      "_dist-DxDBrgFm.js",
+      "node_modules/@office-kit/pptx-preview/dist/index.js"
+    ],
     "css": [
-      "index-DimX4hLy.css"
+      "index-DIKDQRXF.css"
+    ],
+    "assets": [
+      "index-qwK7q_zL.mjs"
     ]
   }
 }

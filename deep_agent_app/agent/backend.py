@@ -14,9 +14,10 @@ import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from deepagents.backends.filesystem import FilesystemBackend
+from deepagents.backends.local_shell import LocalShellBackend
 from deepagents.backends.protocol import (
     DeleteResult,
     EditResult,
@@ -280,6 +281,34 @@ class ReadOnlyScopedFilesystemBackend(
     ScopedFilesystemBackend,
 ):
     """Context-scoped read-only filesystem route."""
+
+
+class ScopedLocalShellBackend(ScopedFilesystemBackend, LocalShellBackend):
+    """Development-only local shell using the production workspace layout."""
+
+    def __init__(
+        self,
+        workspace_root: str | Path = AGENT_WORKSPACE_ROOT,
+        *,
+        inherit_env: bool = True,
+    ):
+        self.layout = WorkspaceLayout(workspace_root)
+        self._use_user_root = False
+        LocalShellBackend.__init__(
+            self,
+            root_dir=self.layout.root,
+            virtual_mode=True,
+            inherit_env=inherit_env,
+        )
+
+    def execute(
+        self,
+        command: str,
+        *,
+        timeout: int | None = None,
+    ) -> ExecuteResponse:
+        self._ensure_conversation()
+        return super().execute(command, timeout=timeout)
 
 
 class BubblewrapBackend(ScopedFilesystemBackend, SandboxBackendProtocol):
@@ -761,6 +790,53 @@ def delete_conversation_workspace(workspace_id: object, thread_id: object) -> No
     WorkspaceLayout().delete_conversation(workspace_id, thread_id)
 
 
+def resolve_conversation_file(
+    workspace_id: object,
+    thread_id: object,
+    file_path: object,
+    *,
+    workspace_root: str | Path | None = None,
+) -> Path:
+    """Resolve one visible regular file without creating workspace directories."""
+    if not isinstance(file_path, str) or not file_path.startswith("/"):
+        raise ValueError("file path must be an absolute workspace path")
+    if "\x00" in file_path or "\\" in file_path:
+        raise ValueError("file path contains unsupported characters")
+
+    virtual_path = PurePosixPath(file_path)
+    parts = virtual_path.parts[1:]
+    if not parts or any(part in {"", ".", ".."} for part in parts):
+        raise ValueError("file path must name a file inside the workspace")
+    if any(part.startswith(".") for part in parts):
+        raise ValueError("hidden workspace files cannot be presented")
+
+    layout = WorkspaceLayout(workspace_root or AGENT_WORKSPACE_ROOT)
+    scope = WorkspaceScope(
+        workspace_id=_safe_segment(workspace_id, name="workspace_id"),
+        thread_id=_safe_segment(thread_id, name="thread_id"),
+    )
+    conversation_root = layout.paths(scope).conversation_root
+    if not conversation_root.is_dir() or conversation_root.is_symlink():
+        raise FileNotFoundError("workspace file does not exist")
+
+    candidate = conversation_root
+    for part in parts:
+        candidate /= part
+        if candidate.is_symlink():
+            raise ValueError("workspace file cannot be a symbolic link")
+    try:
+        resolved = candidate.resolve(strict=True)
+    except (FileNotFoundError, OSError) as exc:
+        raise FileNotFoundError("workspace file does not exist") from exc
+    try:
+        resolved.relative_to(conversation_root.resolve(strict=True))
+    except ValueError as exc:
+        raise ValueError("workspace file escapes the conversation") from exc
+    if not resolved.is_file():
+        raise ValueError("workspace path must name a regular file")
+    return resolved
+
+
 def migrate_legacy_user_workspace(
     legacy_user_id: object,
     workspace_id: object,
@@ -797,10 +873,12 @@ __all__ = [
     "BubblewrapBackend",
     "ReadOnlyFilesystemBackend",
     "ReadOnlyScopedFilesystemBackend",
+    "ScopedLocalShellBackend",
     "ScopedFilesystemBackend",
     "WorkspaceContextMiddleware",
     "bind_workspace",
     "current_workspace_scope",
     "delete_conversation_workspace",
     "migrate_legacy_user_workspace",
+    "resolve_conversation_file",
 ]

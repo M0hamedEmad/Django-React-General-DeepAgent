@@ -13,14 +13,13 @@ export default defineConfig({
     emptyOutDir: true,
     manifest: "manifest.json",
     sourcemap: false,
-    // recharts + the AI SDK make one ~950 kB bundle; one file is the point here.
-    chunkSizeWarningLimit: 1200,
+    // Document viewers are loaded only when their file type is opened.
+    chunkSizeWarningLimit: 1600,
     rolldownOptions: {
       input: "src/main.tsx",
       output: {
         entryFileNames: "index-[hash].js",
         assetFileNames: "index-[hash].[ext]",
-        codeSplitting: false,
       },
     },
   },

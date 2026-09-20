@@ -2,19 +2,22 @@ import {
   AlertCircle, Bot, Brain, Check, CheckCircle2, ChevronRight, Circle, Copy, Globe, ListTodo, ListTree, Loader2, MessageCircleQuestion, PauseCircle, Pencil, RefreshCw, Sparkles, Trash2, Wrench, X,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import { FileArtifactPart } from "./artifacts/FileArtifact";
+import { isFileArtifactPart } from "./artifacts/artifactData";
 import { GenerativeUiPart } from "./generative-ui/Presentation";
 import { isGenerativeUiToolPart, isRecord, reportFromToolPart } from "./generative-ui/presentationData";
 import { InterruptCard } from "./Interrupt";
 import { Markdown } from "./Markdown";
 import { PromptText } from "./PromptText";
-import type { ChatMessage, InterruptData, Part, PlanItem, PlanLifecycle, Presentation } from "./types";
+import type { ChatMessage, InterruptData, Part, PlanItem, PlanLifecycle, WorkspaceItem } from "./types";
 
-export function MessageView({ message, now, isLast, streaming, onOpenPresentation, onAnswer, onEdit, onDelete, onRegenerate }: {
+export function MessageView({ message, threadId, now, isLast, streaming, onOpenPresentation, onAnswer, onEdit, onDelete, onRegenerate }: {
   message: ChatMessage;
+  threadId: string;
   now: number;
   isLast: boolean;
   streaming: boolean;
-  onOpenPresentation: (presentation: Presentation) => void;
+  onOpenPresentation: (item: WorkspaceItem) => void;
   onAnswer: (interruptId: string, value: unknown, echo: string) => void;
   onEdit?: (text: string) => Promise<void> | void;
   onDelete?: () => Promise<void> | void;
@@ -107,10 +110,10 @@ export function MessageView({ message, now, isLast, streaming, onOpenPresentatio
   // Reports are artifacts attached to this response. Keep inline UI in the
   // model's stream order, but anchor every completed report after this
   // message's final text instead of wherever its tool call happened.
-  const reportParts: Part[] = [];
+  const workspaceParts: Part[] = [];
   const contentParts: Part[] = [];
   for (const part of parts) {
-    (isReportPart(part) ? reportParts : contentParts).push(part);
+    (isWorkspacePart(part) ? workspaceParts : contentParts).push(part);
   }
   const chunks = fold(contentParts);
   return (
@@ -134,15 +137,12 @@ export function MessageView({ message, now, isLast, streaming, onOpenPresentatio
             />
           ),
         )}
-        {reportParts.length > 0 && (
+        {workspaceParts.length > 0 && (
           <div className="space-y-2 pt-1">
-            {reportParts.map((part, index) => (
-              <GenerativeUiPart
-                key={part.toolCallId ?? `report:${index}`}
-                part={part}
-                live={live}
-                onOpen={onOpenPresentation}
-              />
+            {workspaceParts.map((part, index) => isFileArtifactPart(part) ? (
+              <FileArtifactPart key={part.toolCallId ?? `file:${index}`} part={part} threadId={threadId} onOpen={onOpenPresentation} />
+            ) : (
+              <GenerativeUiPart key={part.toolCallId ?? `report:${index}`} part={part} live={live} onOpen={onOpenPresentation} />
             ))}
           </div>
         )}
@@ -212,7 +212,8 @@ function relativeTime(timestamp: number, now: number): string {
 type Step = { part: Part; index: number };
 type Chunk = { kind: "part"; part: Part; index: number } | { kind: "group"; steps: Step[]; index: number };
 
-function isReportPart(part: Part): boolean {
+function isWorkspacePart(part: Part): boolean {
+  if (isFileArtifactPart(part)) return true;
   return part.type === "tool-present_report"
     || part.type === "tool-show_report"
     || reportFromToolPart(part) !== null;
@@ -312,7 +313,7 @@ function Activity({ steps, live, running, active, onOpenPresentation, onAnswer }
   live: boolean;
   running: boolean;
   active: boolean;
-  onOpenPresentation: (presentation: Presentation) => void;
+  onOpenPresentation: (presentation: WorkspaceItem) => void;
   onAnswer: (interruptId: string, value: unknown, echo: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -365,7 +366,7 @@ function PartView({ part, live, active, onOpenPresentation, onAnswer }: {
   part: Part;
   live: boolean;
   active: boolean;
-  onOpenPresentation: (presentation: Presentation) => void;
+  onOpenPresentation: (presentation: WorkspaceItem) => void;
   onAnswer: (interruptId: string, value: unknown, echo: string) => void;
 }) {
   if (part.type === "text") return part.text ? <div className="max-w-[70ch]"><Markdown text={part.text} /></div> : null;

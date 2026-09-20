@@ -1,12 +1,14 @@
-import { AlertTriangle, CheckCircle2, LayoutDashboard, Loader2, Printer, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Code2, Download, Eye, File, LayoutDashboard, Loader2, Printer, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, loadOptions, newId, normalizeOptions, saveOptions } from "./api";
+import { FileArtifactView } from "./artifacts/FileArtifact";
+import { artifactUrl, hasSourceView } from "./artifacts/artifactData";
 import { Chat } from "./Chat";
 import { PresentationView } from "./generative-ui/Presentation";
 import { Panel, PanelButton } from "./Panel";
 import { Safe } from "./Safe";
 import { Sidebar } from "./Sidebar";
-import type { ChatMessage, Config, Options, Presentation, RuntimeStatus, ThreadInfo } from "./types";
+import type { ChatMessage, Config, Options, RuntimeStatus, ThreadInfo, WorkspaceItem } from "./types";
 
 /** A thread's address: /chat/<id>, the id being uuid4().hex as the server mints it. */
 const THREAD_PATH = /^\/chat\/([0-9a-f]{32})\/?$/;
@@ -29,8 +31,9 @@ export default function App() {
   const [threadId, setThreadId] = useState(() => threadFromPath() ?? newId());
   const [initial, setInitial] = useState<ChatMessage[] | null>(() => (threadFromPath() ? null : [])); // null while a thread loads
   const [notice, setNotice] = useState<{ message: string; tone: "success" | "warning" } | null>(null);
-  const [panel, setPanel] = useState<Presentation | null>(null);
-  const [presentations, setPresentations] = useState<Presentation[]>([]);
+  const [panel, setPanel] = useState<WorkspaceItem | null>(null);
+  const [sourceArtifactId, setSourceArtifactId] = useState<string | null>(null);
+  const [presentations, setPresentations] = useState<WorkspaceItem[]>([]);
   const [options, setOptionsState] = useState<Options>(loadOptions);
   const [sidebar, setSidebar] = useState(true);
   const [reloading, setReloading] = useState(false);
@@ -109,6 +112,7 @@ export default function App() {
     setThreadId(newId());
     setInitial([]);
     setPanel(null);
+    setSourceArtifactId(null);
     setPresentations([]);
   };
 
@@ -119,6 +123,7 @@ export default function App() {
     setInitial(null);
     setThreadId(id);
     setPanel(null);
+    setSourceArtifactId(null);
     setPresentations([]);
     try {
       const data = await api<{ thread: ThreadInfo; messages: ChatMessage[] }>(`/api/threads/${id}/messages/`);
@@ -192,6 +197,17 @@ export default function App() {
   ) ?? [];
   const failureKey = unavailable.map((item) => item.id).sort().join("|");
   const showFailure = Boolean(failureKey && dismissedFailure !== failureKey);
+  const sourceVisible = panel?.kind === "file" && sourceArtifactId === panel.id;
+
+  const closePanel = () => {
+    setPanel(null);
+    setSourceArtifactId(null);
+  };
+
+  const openWorkspaceItem = (item: WorkspaceItem) => {
+    setPanel(item);
+    setSourceArtifactId(null);
+  };
 
   return (
     <div className="flex h-full bg-app text-ink">
@@ -204,7 +220,7 @@ export default function App() {
         onNew={newChat}
         onDelete={deleteThread}
         presentations={presentations}
-        onOpenPresentation={setPanel}
+        onOpenPresentation={openWorkspaceItem}
         username={config?.user.username ?? ""}
         integrations={config?.runtime.integrations ?? []}
         canReload={config?.runtime.can_reload ?? false}
@@ -249,7 +265,7 @@ export default function App() {
                 options={options}
                 setOptions={setOptions}
                 config={config}
-                onOpenPresentation={setPanel}
+                onOpenPresentation={openWorkspaceItem}
                 onPresentations={setPresentations}
                 // The first message on a new chat gives it an address.
                 onTurnStart={() => showPath(threadId)}
@@ -267,16 +283,33 @@ export default function App() {
         <Safe label="The workspace panel">
           <Panel
             title={panel.title}
-            icon={<LayoutDashboard size={18} />}
-            actions={(
+            icon={panel.kind === "file" ? <File size={18} /> : <LayoutDashboard size={18} />}
+            actions={panel.kind === "file" ? (
+              <>
+                {hasSourceView(panel.path) && (
+                  <PanelButton
+                    label={sourceVisible ? "View preview" : "View source"}
+                    pressed={sourceVisible}
+                    onClick={() => setSourceArtifactId(sourceVisible ? null : panel.id)}
+                  >
+                    {sourceVisible ? <Eye size={17} /> : <Code2 size={17} />}
+                  </PanelButton>
+                )}
+                <a href={artifactUrl(panel, true)} download title="Download file" aria-label="Download file" className="flex h-8 w-8 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30">
+                  <Download size={17} />
+                </a>
+              </>
+            ) : (
               <PanelButton label="Print or save as PDF" onClick={() => window.print()}>
                 <Printer size={17} />
               </PanelButton>
             )}
-            onClose={() => setPanel(null)}
+            onClose={closePanel}
           >
-            <Safe label="This presentation">
-              <PresentationView presentation={panel} />
+            <Safe label={panel.kind === "file" ? "This file" : "This presentation"}>
+              {panel.kind === "file"
+                ? <FileArtifactView artifact={panel} source={sourceVisible} />
+                : <PresentationView presentation={panel} />}
             </Safe>
           </Panel>
         </Safe>
